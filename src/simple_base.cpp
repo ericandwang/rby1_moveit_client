@@ -3,6 +3,7 @@
 #include <trajectory_msgs/msg/joint_trajectory.hpp>
 #include <trajectory_msgs/msg/joint_trajectory_point.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include "rby1-sdk/model.h"
 #include "rby1-sdk/robot.h"
@@ -33,17 +34,17 @@ void encoder_callback(const sensor_msgs::msg::JointState::SharedPtr msg) {
     latest_joint_positions_[1] = msg->position[1];
 }
 
-void set_SE2_speed(double linear, double angular, const rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr& publisher,
-    trajectory_msgs::msg::JointTrajectory& msg, trajectory_msgs::msg::JointTrajectoryPoint& point){
-    point.positions = {linear*SPEED_TO_WHEEL_W, angular*W_TO_WHEEL_W};
-    msg.points.clear();
-    msg.points.push_back(point);
+void set_SE2_speed(double linear, double angular, const rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr& publisher,
+    geometry_msgs::msg::TwistStamped& msg, const rclcpp::Node::SharedPtr& node){
+    msg.header.stamp = node->now();
+    msg.twist.linear.x = linear;
+    msg.twist.angular.z = angular;
     publisher->publish(msg);
 }
 
 
-void move_linear(double distance, double speed, const rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr& publisher,
-    trajectory_msgs::msg::JointTrajectory& msg, trajectory_msgs::msg::JointTrajectoryPoint& point){
+void move_linear(double distance, double speed, const rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr& publisher,
+    geometry_msgs::msg::TwistStamped& msg, const rclcpp::Node::SharedPtr& node){
     // reading current position
     double start_pos_r = get_wheel_position("right_wheel");
     double start_pos_l = get_wheel_position("left_wheel");
@@ -57,7 +58,7 @@ void move_linear(double distance, double speed, const rclcpp::Publisher<trajecto
     rclcpp::Rate rate(100); // 100 Hz
     while (std::abs(get_wheel_position("right_wheel") - start_pos_r) < distance*DISTANCE_TO_WHEEL_ANGLE ||
            std::abs(get_wheel_position("left_wheel") - start_pos_l) < distance*DISTANCE_TO_WHEEL_ANGLE) {
-        set_SE2_speed(speed, 0.0, publisher, msg, point);
+        set_SE2_speed(speed, 0.0, publisher, msg, node);
         rate.sleep();
     }
 
@@ -70,15 +71,15 @@ void move_linear(double distance, double speed, const rclcpp::Publisher<trajecto
     std::cout << "Current left wheel position after linear: " << get_wheel_position("left_wheel") << " rad" << std::endl;
 
     // sending stop command
-    set_SE2_speed(0.0, 0.0, publisher, msg, point);
+    set_SE2_speed(0.0, 0.0, publisher, msg, node);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    set_SE2_speed(0.0, 0.0, publisher, msg, point);
+    set_SE2_speed(0.0, 0.0, publisher, msg, node);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    set_SE2_speed(0.0, 0.0, publisher, msg, point);
+    set_SE2_speed(0.0, 0.0, publisher, msg, node);
 }
 
-void move_angular(double angle, double w, const rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr& publisher,
-    trajectory_msgs::msg::JointTrajectory& msg, trajectory_msgs::msg::JointTrajectoryPoint& point){
+void move_angular(double angle, double w, const rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr& publisher,
+    geometry_msgs::msg::TwistStamped& msg, const rclcpp::Node::SharedPtr& node){
     // reading current position
     double start_pos_r = get_wheel_position("right_wheel");
     double start_pos_l = get_wheel_position("left_wheel");
@@ -92,7 +93,7 @@ void move_angular(double angle, double w, const rclcpp::Publisher<trajectory_msg
     rclcpp::Rate rate(100); // 100 Hz
     while (std::abs(get_wheel_position("right_wheel") - start_pos_r) < angle*ANGLE_TO_WHEEL_ANGLE ||
         std::abs(get_wheel_position("left_wheel") - start_pos_l) < angle*ANGLE_TO_WHEEL_ANGLE) {
-        set_SE2_speed(0.0, w, publisher, msg, point);
+        set_SE2_speed(0.0, w, publisher, msg, node);
         rate.sleep();
     }
 
@@ -105,11 +106,11 @@ void move_angular(double angle, double w, const rclcpp::Publisher<trajectory_msg
     std::cout << "Current left wheel position after angular: " << get_wheel_position("left_wheel") << " rad" << std::endl;
 
     // sending stop command
-    set_SE2_speed(0.0, 0.0, publisher, msg, point);
+    set_SE2_speed(0.0, 0.0, publisher, msg, node);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    set_SE2_speed(0.0, 0.0, publisher, msg, point);
+    set_SE2_speed(0.0, 0.0, publisher, msg, node);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    set_SE2_speed(0.0, 0.0, publisher, msg, point);
+    set_SE2_speed(0.0, 0.0, publisher, msg, node);
 }
 
 int main(int argc, char * argv[])
@@ -140,23 +141,25 @@ int main(int argc, char * argv[])
     });
 
     // initializing trajectory publisher
-    auto publisher = node->create_publisher<trajectory_msgs::msg::JointTrajectory>(
-        "/rby1_base_controller/joint_trajectory", 10);
+    auto publisher = node->create_publisher<geometry_msgs::msg::TwistStamped>(
+        "/rby1_base_controller/cmd_vel", 10);
 
     // initializing message
-    trajectory_msgs::msg::JointTrajectory msg;
-    msg.joint_names = {"right_wheel", "left_wheel"};
-    trajectory_msgs::msg::JointTrajectoryPoint point;
-    point.positions = {0.0, 0.0};
-    point.time_from_start.sec = 0;
-    point.time_from_start.nanosec = 0;
-    msg.points.push_back(point);
-
+    auto msg = geometry_msgs::msg::TwistStamped();
+    msg.header.stamp = node->now(); // Use current time
+    msg.header.frame_id = "base";
+    msg.twist.linear.x = 0.0;
+    msg.twist.linear.y = 0.0;
+    msg.twist.linear.z = 0.0;
+    msg.twist.angular.x = 0.0;
+    msg.twist.angular.y = 0.0;
+    msg.twist.angular.z = 0.0;
+    
     std::this_thread::sleep_for(std::chrono::seconds(5));
 
-    move_linear(0.3, -0.2, publisher, msg, point);
-    move_angular(M_PI/2, 0.3, publisher, msg, point);
-    move_linear(0.3, 0.2, publisher, msg, point);
+    move_linear(0.3, -0.2, publisher, msg, node);
+    move_angular(M_PI/2, 0.3, publisher, msg, node);
+    move_linear(0.3, 0.2, publisher, msg, node);
 
     /*
     move_linear(1, 0.2, publisher, msg, point);

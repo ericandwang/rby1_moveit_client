@@ -34,7 +34,7 @@ install(TARGETS init_base DESTINATION lib/${PROJECT_NAME})
 
 # simple base
 add_executable(simple_base src/simple_base.cpp)
-ament_target_dependencies(simple_base rclcpp trajectory_msgs sensor_msgs)
+ament_target_dependencies(simple_base rclcpp trajectory_msgs sensor_msgs geometry_msgs)
 install(TARGETS simple_base DESTINATION lib/${PROJECT_NAME})
 target_link_libraries(simple_base rby1-sdk::rby1-sdk)
 
