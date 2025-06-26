@@ -12,10 +12,14 @@ find_package(moveit_ros_planning_interface REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(nav2_msgs REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
 find_package(rby1-sdk REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(dynamixel_sdk REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(tf2 REQUIRED)
 
 # Include rby1-sdk headers
 include_directories(~/rby1-sdk/include)
@@ -60,6 +64,11 @@ add_executable(moveit_gripper_base_test src/moveit_gripper_base_test.cpp)
 ament_target_dependencies(moveit_gripper_base_test rclcpp dynamixel_sdk moveit_ros_planning_interface geometry_msgs trajectory_msgs sensor_msgs)
 install(TARGETS moveit_gripper_base_test DESTINATION lib/${PROJECT_NAME})
 target_link_libraries(moveit_gripper_base_test rby1-sdk::rby1-sdk)
+
+# apriltag continuously publish goal pose to nav2
+add_executable(apriltag_to_nav2_test src/apriltag_to_nav2_test.cpp)
+ament_target_dependencies(apriltag_to_nav2_test rclcpp geometry_msgs rclcpp_action nav2_msgs tf2_ros tf2_geometry_msgs)
+install(TARGETS apriltag_to_nav2_test DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
