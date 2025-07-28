@@ -52,6 +52,11 @@ add_executable(simple_head src/simple_head.cpp)
 ament_target_dependencies(simple_head rclcpp moveit_ros_planning_interface geometry_msgs)
 install(TARGETS simple_head DESTINATION lib/${PROJECT_NAME})
 
+# moveit + head + gripper for camera object recording
+add_executable(moveit_object_record src/moveit_object_record.cpp)
+ament_target_dependencies(moveit_object_record rclcpp moveit_ros_planning_interface geometry_msgs)
+install(TARGETS moveit_object_record DESTINATION lib/${PROJECT_NAME})
+
 # simple gripper
 add_executable(simple_gripper src/simple_gripper.cpp)
 ament_target_dependencies(simple_gripper rclcpp dynamixel_sdk)
