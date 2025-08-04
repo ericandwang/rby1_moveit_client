@@ -262,7 +262,6 @@ int main(int argc, char * argv[])
     auto const logger = rclcpp::get_logger("moveit_simple_client");
 
     // script start
-    /**
     auto robot = rb::Robot<y1_model::A>::Create("192.168.30.1:50051");
     robot->Connect();
     if (!robot->IsPowerOn(kAll)){
@@ -324,7 +323,9 @@ int main(int argc, char * argv[])
     std::cin.get();  // Waits for the user to press Enter
 
     gripper_position_command(portHandler_gripper, packetHandler_gripper, activeIDs_gripper, 0.1, 0.6);
-    */
+
+    std::cout << "Press Enter to bring hand in front of camera..." << std::endl;
+    std::cin.get();  // Waits for the user to press Enter
 
     auto joint_state_sub = node->create_subscription<sensor_msgs::msg::JointState>(
         "/joint_states", 10, encoder_callback);
@@ -514,12 +515,10 @@ int main(int argc, char * argv[])
         right_arm.execute(joint_plan);
     }
 
-    /**
     std::cout << "Press Enter to open gripper..." << std::endl;
     std::cin.get();  // Waits for the user to press Enter
 
     gripper_position_command(portHandler_gripper, packetHandler_gripper, activeIDs_gripper, 0.1, 0.1);
-    */
 
     // Stop spinning
     running = false;
