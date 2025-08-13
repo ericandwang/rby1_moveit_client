@@ -58,6 +58,13 @@ ament_target_dependencies(moveit_object_record rclcpp moveit_ros_planning_interf
 install(TARGETS moveit_object_record DESTINATION lib/${PROJECT_NAME})
 target_link_libraries(moveit_object_record rby1-sdk::rby1-sdk)
 
+# robot moveit pose reset
+add_executable(moveit_reset_pose src/moveit_reset_pose.cpp)
+ament_target_dependencies(moveit_reset_pose rclcpp moveit_ros_planning_interface geometry_msgs dynamixel_sdk)
+install(TARGETS moveit_reset_pose DESTINATION lib/${PROJECT_NAME})
+target_link_libraries(moveit_reset_pose rby1-sdk::rby1-sdk)
+
+
 # simple gripper
 add_executable(simple_gripper src/simple_gripper.cpp)
 ament_target_dependencies(simple_gripper rclcpp dynamixel_sdk)
@@ -80,6 +87,12 @@ target_link_libraries(moveit_gripper_base_test rby1-sdk::rby1-sdk)
 add_executable(apriltag_to_nav2_test src/apriltag_to_nav2_test.cpp)
 ament_target_dependencies(apriltag_to_nav2_test rclcpp geometry_msgs rclcpp_action nav2_msgs tf2_ros tf2_geometry_msgs)
 install(TARGETS apriltag_to_nav2_test DESTINATION lib/${PROJECT_NAME})
+
+# apriltag detected and grasped
+add_executable(apriltag_nav2_gripper src/apriltag_nav2_gripper.cpp)
+ament_target_dependencies(apriltag_nav2_gripper rclcpp dynamixel_sdk moveit_ros_planning_interface geometry_msgs trajectory_msgs rclcpp_action nav2_msgs tf2_ros tf2_geometry_msgs sensor_msgs)
+install(TARGETS apriltag_nav2_gripper DESTINATION lib/${PROJECT_NAME})
+target_link_libraries(apriltag_nav2_gripper rby1-sdk::rby1-sdk)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

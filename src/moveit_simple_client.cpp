@@ -141,61 +141,87 @@ int main(int argc, char * argv[])
     //target_pose_left.position.y = 0.219;
     //target_pose_left.position.z = -0.375;
 
-    // right arm orientation
-    Eigen::AngleAxisd roll(M_PI/2, Eigen::Vector3d::UnitX());
-    Eigen::AngleAxisd pitch(0, Eigen::Vector3d::UnitY());
-    Eigen::AngleAxisd yaw(0, Eigen::Vector3d::UnitZ());
-    Eigen::Quaterniond q = yaw * pitch * roll;
-    target_pose_right.orientation.w = q.w();
-    target_pose_right.orientation.x = q.x();
-    target_pose_right.orientation.y = q.y();
-    target_pose_right.orientation.z = q.z();
-    //target_pose_right.orientation.w = 1.0;
+    // // right arm orientation
+    // Eigen::AngleAxisd roll(0, Eigen::Vector3d::UnitX());
+    // Eigen::AngleAxisd pitch(0, Eigen::Vector3d::UnitY());
+    // Eigen::AngleAxisd yaw(0, Eigen::Vector3d::UnitZ());
+    // Eigen::Quaterniond q = yaw * pitch * roll;
+    // target_pose_right.orientation.w = q.w();
+    // target_pose_right.orientation.x = q.x();
+    // target_pose_right.orientation.y = q.y();
+    // target_pose_right.orientation.z = q.z();
+    // // geometry_msgs::msg::Quaternion quat_msg;
+    // // quat_msg.w = q.w();
+    // // quat_msg.x = q.x();
+    // // quat_msg.y = q.y();
+    // // quat_msg.z = q.z();
 
-    // set fixed end effector orientation constraint
-    /*
-    geometry_msgs::msg::Quaternion quat_msg;
-    quat_msg.w = q.w();
-    quat_msg.x = q.x();
-    quat_msg.y = q.y();
-    quat_msg.z = q.z();
-    moveit_msgs::msg::OrientationConstraint ocm;
-    ocm.link_name = "ee_right";
-    ocm.header.frame_id = "camera_right";
-    ocm.orientation = quat_msg;
-    ocm.absolute_x_axis_tolerance = 0.1;
-    ocm.absolute_y_axis_tolerance = 0.1;
-    ocm.absolute_z_axis_tolerance = 0.1;
-    ocm.weight = 1.0;
-    moveit_msgs::msg::Constraints constraints;
-    constraints.orientation_constraints.push_back(ocm);
-    right_arm.setPathConstraints(constraints);
-    */
+    // // set fixed end effector orientation constraint
+    // moveit_msgs::msg::OrientationConstraint ocm;
+    // ocm.header.frame_id = "link_head_2"; // Reference frame (should match your pose goal)
+    // ocm.link_name = "ee_right"; // End effector link
+    // ocm.orientation = target_pose_right.orientation; // Desired orientation
+    // ocm.absolute_x_axis_tolerance = 0.2; // Tolerance in radians (axes)
+    // ocm.absolute_y_axis_tolerance = 0.2;
+    // ocm.absolute_z_axis_tolerance = 0.2;
+    // ocm.weight = 1.0;
+   
+    // // set soft box position constraint
+    // moveit_msgs::msg::PositionConstraint pcm;
+    // pcm.header.frame_id = "link_head_2";
+    // pcm.link_name = "ee_right";
+    // // Define a box region
+    // shape_msgs::msg::SolidPrimitive box;
+    // box.type = shape_msgs::msg::SolidPrimitive::BOX;
+    // box.dimensions = {3, 3, 3}; // Size of the box (x, y, z in meters)
+    // pcm.constraint_region.primitives.push_back(box);
+    // // Set the pose (center) of the box
+    // geometry_msgs::msg::Pose box_pose;
+    // box_pose.position.x = 0.4;
+    // box_pose.position.y = -0.3;
+    // box_pose.position.z = -0.1; // Center of the constraint box
+    // box_pose.orientation.w = 1.0; // No rotation
+    // pcm.constraint_region.primitive_poses.push_back(box_pose);
+    // // Optionally, set weight
+    // pcm.weight = 0.5; // Lower weight means it's a softer constraint
 
-    /**
-    // first send to position 15 cm behind, 15 cm above, and 15 cm to the right of object
-    target_pose_right.position.x = 0.347 - dx;
-    target_pose_right.position.y = -0.035 - dy;
-    target_pose_right.position.z = -0.210 - dz;
-    //left_arm.setPoseTarget(target_pose_left,"ee_left");
-    right_arm.setPoseTarget(target_pose_right,"ee_right");
-    // Plan to the target poses
-    //moveit::planning_interface::MoveGroupInterface::Plan left_plan;
-    moveit::planning_interface::MoveGroupInterface::Plan right_plan;
-    //bool success_left = (left_arm.plan(left_plan) == moveit::core::MoveItErrorCode::SUCCESS);
-    bool success = (right_arm.plan(right_plan) == moveit::core::MoveItErrorCode::SUCCESS);
-    // Execute the plan if successful
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-    if (success) {
-        right_arm.execute(right_plan);
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        //left_arm.execute(left_plan);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        RCLCPP_INFO(logger, "Motion executed!");
-    } else {
-        RCLCPP_ERROR(logger, "Planning failed!");
-    }
-        **/
+    // // create path constraints, plan, and execute
+    // moveit_msgs::msg::Constraints path_constraints;
+    // path_constraints.orientation_constraints.push_back(ocm);
+    // path_constraints.position_constraints.push_back(pcm);
+    // // Set path constraints before planning
+    // right_arm.setPathConstraints(path_constraints);
+    // // Set your desired pose (target) and plan
+    // right_arm.setPoseTarget(target_pose_right, "ee_right");
+    // moveit::planning_interface::MoveGroupInterface::Plan right_plan;
+    // right_arm.setPlanningTime(20.0);
+    // bool success = (right_arm.plan(right_plan) == moveit::core::MoveItErrorCode::SUCCESS);
+    // if (success) {
+    //     right_arm.execute(right_plan);
+    // }
+
+    // // first send to position 15 cm behind, 15 cm above, and 15 cm to the right of object
+    // target_pose_right.position.x = 0.347 - dx;
+    // target_pose_right.position.y = -0.035 - dy;
+    // target_pose_right.position.z = -0.210 - dz;
+    // //left_arm.setPoseTarget(target_pose_left,"ee_left");
+    // right_arm.setPoseTarget(target_pose_right,"ee_right");
+    // // Plan to the target poses
+    // //moveit::planning_interface::MoveGroupInterface::Plan left_plan;
+    // moveit::planning_interface::MoveGroupInterface::Plan right_plan;
+    // //bool success_left = (left_arm.plan(left_plan) == moveit::core::MoveItErrorCode::SUCCESS);
+    // bool success = (right_arm.plan(right_plan) == moveit::core::MoveItErrorCode::SUCCESS);
+    // // Execute the plan if successful
+    // std::this_thread::sleep_for(std::chrono::seconds(1));
+    // if (success) {
+    //     right_arm.execute(right_plan);
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    //     //left_arm.execute(left_plan);
+    //     std::this_thread::sleep_for(std::chrono::seconds(1));
+    //     RCLCPP_INFO(logger, "Motion executed!");
+    // } else {
+    //     RCLCPP_ERROR(logger, "Planning failed!");
+    // }
 
     // Stop spinning
     running = false;

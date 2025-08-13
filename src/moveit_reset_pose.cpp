@@ -262,71 +262,6 @@ int main(int argc, char * argv[])
     auto const logger = rclcpp::get_logger("moveit_simple_client");
 
     // script start
-    auto robot = rb::Robot<y1_model::A>::Create("192.168.30.1:50051");
-    robot->Connect();
-    if (!robot->IsPowerOn(kAll)){
-        robot->PowerOn(kAll);
-        robot->ServoOn(kAll);
-        robot->EnableControlManager();
-    }
-
-    upc::InitializeDevice(upc::kGripperDeviceName);
-    upc::InitializeDevice(upc::kMasterArmDeviceName);
-
-    if (robot->IsPowerOn("48v")) {
-        robot->SetToolFlangeOutputVoltage("right", 12);
-        robot->SetToolFlangeOutputVoltage("left", 12);
-        std::cout << "Attempting to 12V power on for gripper." << std::endl;
-
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-
-    const char* devicename_gripper = "/dev/rby1_gripper";
-    //const char* devicename_gripper = "/dev/ttyUSB0";
-
-    dynamixel::PortHandler* portHandler_gripper = dynamixel::PortHandler::getPortHandler(devicename_gripper);
-    dynamixel::PacketHandler* packetHandler_gripper = dynamixel::PacketHandler::getPacketHandler(PROTOCOL_VERSION);
-
-    if (!portHandler_gripper->openPort()) {
-        std::cerr << "Failed to open the port!" << std::endl;
-        return 1;
-    }
-
-    if (!portHandler_gripper->setBaudRate(BAUDRATE)) {
-        std::cerr << "Failed to change the baudrate!" << std::endl;
-        return 1;
-    }
-
-    std::vector<int> activeIDs_gripper;
-
-    for (int id = 0; id < 2; ++id) {
-        uint8_t dxl_error = 0;
-        int dxl_comm_result = packetHandler_gripper->ping(portHandler_gripper, id, &dxl_error);
-        if (dxl_comm_result == COMM_SUCCESS) {
-            std::cout << "Dynamixel ID " << id << " is active." << std::endl;
-            activeIDs_gripper.push_back(id);            
-        } else if (dxl_error != 0) {
-            std::cout << "Servo error" << std::endl;
-        }
-        else {
-            std::cerr << "Dynamixel ID " << id << " is not active." << std::endl;
-        }
-    }
-
-    // gripper initialization
-    initialization_for_gripper(portHandler_gripper, packetHandler_gripper, activeIDs_gripper);
-
-    // send gripper command
-    gripper_position_command(portHandler_gripper, packetHandler_gripper, activeIDs_gripper, 0.1, 0.1);
-
-    std::cout << "Press Enter to close gripper..." << std::endl;
-    std::cin.get();  // Waits for the user to press Enter
-
-    gripper_position_command(portHandler_gripper, packetHandler_gripper, activeIDs_gripper, 0.1, 0.6);
-
-    std::cout << "Press Enter to bring hand in front of camera..." << std::endl;
-    std::cin.get();  // Waits for the user to press Enter
-
     auto joint_state_sub = node->create_subscription<sensor_msgs::msg::JointState>(
         "/joint_states", 10, encoder_callback);
 
@@ -338,214 +273,28 @@ int main(int argc, char * argv[])
         }
     });
 
-    // Offset from link_head_2 to camera_right
-    //const double dx = -0.01;
-    //const double dy = -0.060;
-    //const double dz = 0.015;
-
-    // Create the MoveGroupInterface for your planning group
-    using moveit::planning_interface::MoveGroupInterface;
-    //auto dual_arm = MoveGroupInterface(node, "rby1_dualarm");
-    auto left_arm = MoveGroupInterface(node, "rby1_left_arm");
-    auto right_arm = MoveGroupInterface(node, "rby1_right_arm");
-    std::cout << "End effector link left: " << left_arm.getEndEffectorLink() << std::endl;
-    std::cout << "End effector link right: " << right_arm.getEndEffectorLink() << std::endl;
-    //std::cout << "End effector: " << dual_arm.getEndEffectorLink() << std::endl;
-
-    // Set frame references
-    left_arm.setPoseReferenceFrame("link_head_2");
-    right_arm.setPoseReferenceFrame("link_head_2");
-    //left_arm.setPoseReferenceFrame("camera_right");
-    //right_arm.setPoseReferenceFrame("camera_right");
-
-    // Set arm to initial manipulation position
-    std::vector<double> joint_positions(7);
-    joint_positions[0] = -16 * D2R;
-    joint_positions[1] = -50 * D2R;
-    joint_positions[2] = 0 * D2R;
-    joint_positions[3] = -70 * D2R;
-    joint_positions[4] = 0 * D2R;
-    joint_positions[5] = 0 * D2R;
-    joint_positions[6] = 38 * D2R;
-    joint_positions[0] = -29 * D2R;
-    joint_positions[1] = -45 * D2R;
-    joint_positions[2] = 36 * D2R;
-    joint_positions[3] = -96 * D2R;
-    joint_positions[4] = 21 * D2R;
-    joint_positions[5] = -53 * D2R;
-    joint_positions[6] = 0 * D2R;
-    joint_positions[0] = -0 * D2R;
-    joint_positions[1] = -90 * D2R;
-    joint_positions[2] = 0 * D2R;
-    joint_positions[3] = -90 * D2R; //-120 * D2R;
-    joint_positions[4] = 0 * D2R;
-    joint_positions[5] = -35 * D2R;
-    joint_positions[6] = 0 * D2R;
-    right_arm.setJointValueTarget(joint_positions);
-    moveit::planning_interface::MoveGroupInterface::Plan joint_plan;
-    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
-        right_arm.execute(joint_plan);
-    }
-
-    std::cout << "right_arm_0: " << get_encoder("right_arm_0") << " rad" << std::endl;
-    std::cout << "right_arm_1: " << get_encoder("right_arm_1") << " rad" << std::endl;
-    std::cout << "right_arm_2: " << get_encoder("right_arm_2") << " rad" << std::endl;
-    std::cout << "right_arm_3: " << get_encoder("right_arm_3") << " rad" << std::endl;
-    std::cout << "right_arm_4: " << get_encoder("right_arm_4") << " rad" << std::endl;
-    std::cout << "right_arm_5: " << get_encoder("right_arm_5") << " rad" << std::endl;
-    std::cout << "right_arm_6: " << get_encoder("right_arm_6") << " rad" << std::endl;
-
-    auto tf_buffer = std::make_shared<tf2_ros::Buffer>(node->get_clock());
-    auto tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
-    rclcpp::sleep_for(std::chrono::milliseconds(1000));
-
-    geometry_msgs::msg::TransformStamped base_to_hand;
-    geometry_msgs::msg::TransformStamped base_to_head;
-
-    bool got_hand_tf = false;
-    bool got_head_tf = false;
-
-    rclcpp::Rate rate(10.0);  // 10 Hz retry frequency
-    RCLCPP_INFO(logger, "Waiting for both transforms to become available...");
-
-    while (rclcpp::ok() && (!got_hand_tf || !got_head_tf)) {
-        try {
-            base_to_hand = tf_buffer->lookupTransform(
-                "base", "ee_finger_r1", tf2::TimePointZero, tf2::durationFromSec(0.5));
-            got_hand_tf = true;
-        } catch (const tf2::TransformException & ex) {
-            RCLCPP_DEBUG(logger, "Waiting for base->ee_finger_r1: %s", ex.what());
-        }
-
-        try {
-            base_to_head = tf_buffer->lookupTransform(
-                "base", "link_head_1", tf2::TimePointZero, tf2::durationFromSec(0.5));
-            got_head_tf = true;
-        } catch (const tf2::TransformException & ex) {
-            RCLCPP_DEBUG(logger, "Waiting for base->link_head_1: %s", ex.what());
-        }
-
-        if (!got_hand_tf || !got_head_tf) {
-            rate.sleep();  // Wait a bit and try again
-        }
-    }
-
-    // Print the transforms before moving the head
-    RCLCPP_INFO(logger, "Transform base -> ee_finger_r1:");
-    RCLCPP_INFO(logger, "  Translation: [%.3f, %.3f, %.3f]",
-                base_to_hand.transform.translation.x,
-                base_to_hand.transform.translation.y,
-                base_to_hand.transform.translation.z);
-    RCLCPP_INFO(logger, "  Rotation (quaternion): [%.3f, %.3f, %.3f, %.3f]",
-                base_to_hand.transform.rotation.x,
-                base_to_hand.transform.rotation.y,
-                base_to_hand.transform.rotation.z,
-                base_to_hand.transform.rotation.w);
-
-    RCLCPP_INFO(logger, "Transform base -> link_head_1:");
-    RCLCPP_INFO(logger, "  Translation: [%.3f, %.3f, %.3f]",
-                base_to_head.transform.translation.x,
-                base_to_head.transform.translation.y,
-                base_to_head.transform.translation.z);
-    RCLCPP_INFO(logger, "  Rotation (quaternion): [%.3f, %.3f, %.3f, %.3f]",
-                base_to_head.transform.rotation.x,
-                base_to_head.transform.rotation.y,
-                base_to_head.transform.rotation.z,
-                base_to_head.transform.rotation.w);
-
-    // Calculate desired tracking angle from head to hand
-    double dx = base_to_hand.transform.translation.x - base_to_head.transform.translation.x;
-    double dy = base_to_hand.transform.translation.y - base_to_head.transform.translation.y;
-    double dz = base_to_hand.transform.translation.z - base_to_head.transform.translation.z;
-
-
-    double yaw = std::atan2(dy, dx);
-    double pitch = std::atan2(-dz, dx);
-
-    // Create the MoveGroupInterface for your planning group
+    // Create the MoveGroupInterface for head planning group
     using moveit::planning_interface::MoveGroupInterface;
     auto head = MoveGroupInterface(node, "rby1_head");
 
-    // Set head to initial position
+    // Set head to reset position
     std::vector<double> joint_positions_head(2);
-    joint_positions_head[0] = yaw; //20 * D2R;
-    joint_positions_head[1] = pitch; //10 * D2R;
+    joint_positions_head[0] = 0;
+    joint_positions_head[1] = 15 * D2R;
     head.setJointValueTarget(joint_positions_head);
     moveit::planning_interface::MoveGroupInterface::Plan joint_plan_head;
     if(head.plan(joint_plan_head) == moveit::core::MoveItErrorCode::SUCCESS) {
         head.execute(joint_plan_head);
     }
 
-    std::cout << "Press Enter to rotate wrist..." << std::endl;
-    std::cin.get();  // Waits for the user to press Enter
+    // Create the MoveGroupInterface for arm planning group
+    using moveit::planning_interface::MoveGroupInterface;
+    //auto left_arm = MoveGroupInterface(node, "rby1_left_arm");
+    auto right_arm = MoveGroupInterface(node, "rby1_right_arm");
+    //std::cout << "End effector: " << dual_arm.getEndEffectorLink() << std::endl;
 
-    joint_positions[6] = -150 * D2R;
-    right_arm.setJointValueTarget(joint_positions);
-    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
-        right_arm.execute(joint_plan);
-    }
-
-    joint_positions[6] = 150 * D2R;
-    right_arm.setJointValueTarget(joint_positions);
-    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
-        right_arm.execute(joint_plan);
-    }
-
-    // added rotations
-    joint_positions[6] = 0 * D2R;
-    right_arm.setJointValueTarget(joint_positions);
-    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
-        right_arm.execute(joint_plan);
-    }
-
-    joint_positions[4] = 90 * D2R;
-    right_arm.setJointValueTarget(joint_positions);
-    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
-        right_arm.execute(joint_plan);
-    }
-
-    joint_positions[4] = -90 * D2R;
-    right_arm.setJointValueTarget(joint_positions);
-    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
-        right_arm.execute(joint_plan);
-    }
-
-    joint_positions[4] = 0 * D2R;
-    right_arm.setJointValueTarget(joint_positions);
-    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
-        right_arm.execute(joint_plan);
-    }
-
-    joint_positions[5] = 10 * D2R;
-    right_arm.setJointValueTarget(joint_positions);
-    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
-        right_arm.execute(joint_plan);
-    }
-
-    joint_positions[5] = -80 * D2R;
-    right_arm.setJointValueTarget(joint_positions);
-    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
-        right_arm.execute(joint_plan);
-    }
-
-    joint_positions[5] = -35 * D2R;
-    right_arm.setJointValueTarget(joint_positions);
-    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
-        right_arm.execute(joint_plan);
-    }
-
-    std::cout << "Press Enter to reset positions..." << std::endl;
-    std::cin.get();  // Waits for the user to press Enter
-    
-    // reset head
-    joint_positions_head[0] = 0;
-    joint_positions_head[1] = 0;
-    head.setJointValueTarget(joint_positions_head);
-    if(head.plan(joint_plan_head) == moveit::core::MoveItErrorCode::SUCCESS) {
-        head.execute(joint_plan_head);
-    }
-
-    // reset right arm
+    // Set arm to zero position
+    std::vector<double> joint_positions(7);
     joint_positions[0] = 0;
     joint_positions[1] = 0;
     joint_positions[2] = 0;
@@ -554,14 +303,10 @@ int main(int argc, char * argv[])
     joint_positions[5] = 0;
     joint_positions[6] = 0;
     right_arm.setJointValueTarget(joint_positions);
+    moveit::planning_interface::MoveGroupInterface::Plan joint_plan;
     if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
         right_arm.execute(joint_plan);
     }
-
-    std::cout << "Press Enter to open gripper..." << std::endl;
-    std::cin.get();  // Waits for the user to press Enter
-
-    gripper_position_command(portHandler_gripper, packetHandler_gripper, activeIDs_gripper, 0.1, 0.1);
 
     // Stop spinning
     running = false;
