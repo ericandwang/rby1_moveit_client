@@ -319,8 +319,8 @@ void initialize_arm(const std::shared_ptr<rclcpp::Node>& node) {
     // Set arm to initial manipulation position
     std::vector<double> joint_positions(7);
     joint_positions[0] = -29 * D2R;
-    joint_positions[1] = -45 * D2R;
-    joint_positions[2] = 36 * D2R;
+    joint_positions[1] = -77 * D2R; //-45 * D2R;
+    joint_positions[2] = 22 * D2R; //36 * D2R;
     joint_positions[3] = -96 * D2R;
     joint_positions[4] = 21 * D2R;
     joint_positions[5] = 53 * D2R;
@@ -463,7 +463,8 @@ public:
       tf_buffer_(this->get_clock()),
       tf_listener_(tf_buffer_),
       offset_x_(offset_x),
-      offset_y_(offset_y)
+      offset_y_(offset_y),
+      keepSendingGoal(true)
     {
         // Setup Nav2 action client
         nav2_client_ = rclcpp_action::create_client<NavigateToPose>(this, "navigate_to_pose");
@@ -476,84 +477,94 @@ public:
         }
 
         // Timer to periodically send goal
-        timer_ = this->create_wall_timer(
-            3s, std::bind(&TagGoalNav2Node::send_tag_goal, this));
+        //timer_ = this->create_wall_timer(
+        //    2s, std::bind(&TagGoalNav2Node::send_tag_goal, this));
+        //Send goal multiple times
+        for (int i = 0; i < 3; i++) {
+            send_tag_goal();
+            rclcpp::sleep_for(50ms);   // small delay between sends
+        }
+        //send_tag_goal();
     }
 
 private:
     void send_tag_goal()
     {
-        // Lookup transform from tag36h11:3 to world
-        geometry_msgs::msg::TransformStamped transformStamped;
-        try {
-            transformStamped = tf_buffer_.lookupTransform(
-                "map",         // target frame
-                "tag36h11:3_map",    // source frame
-                tf2::TimePointZero); // latest
-        } catch (tf2::TransformException &ex) {
-            RCLCPP_WARN(this->get_logger(), "Could not get transform: %s", ex.what());
-            return;
+        if (keepSendingGoal) {
+            // Lookup transform from tag36h11:3 to world
+            geometry_msgs::msg::TransformStamped transformStamped;
+            try {
+                transformStamped = tf_buffer_.lookupTransform(
+                    "map",         // target frame
+                    "tag36h11:3_map",    // source frame
+                    tf2::TimePointZero); // latest
+            } catch (tf2::TransformException &ex) {
+                RCLCPP_WARN(this->get_logger(), "Could not get transform: %s", ex.what());
+                return;
+            }
+
+            // Convert to PoseStamped
+            geometry_msgs::msg::PoseStamped goal_pose;
+            goal_pose.header.stamp = this->now();
+            goal_pose.header.frame_id = "map";
+            goal_pose.pose.position.x = transformStamped.transform.translation.x;
+            goal_pose.pose.position.y = transformStamped.transform.translation.y;
+            goal_pose.pose.position.z = 0.0; // For ground robots, z is usually 0
+
+            // Extract yaw from the transform's rotation
+            double roll, pitch, yaw;
+            tf2::Quaternion tf_quat;
+            tf2::fromMsg(transformStamped.transform.rotation, tf_quat);
+            tf2::Matrix3x3(tf_quat).getRPY(roll, pitch, yaw);
+
+            // Create new quaternion with only yaw (roll=0, pitch=0)
+            tf2::Quaternion flat_quat;
+            flat_quat.setRPY(0, 0, yaw);
+            goal_pose.pose.orientation = tf2::toMsg(flat_quat);
+
+            // Add offsets
+            //double offset_x = -0.2; // -20 cm
+            goal_pose.pose.position.x += offset_x_ * std::cos(yaw);
+            goal_pose.pose.position.y += offset_x_ * std::sin(yaw);
+            //double offset_y = 0.1;
+            goal_pose.pose.position.x += -offset_y_ * std::sin(yaw);
+            goal_pose.pose.position.y +=  offset_y_ * std::cos(yaw);
+
+            // Only yaw is used for Nav2, but we copy the full quaternion
+            //goal_pose.pose.orientation = transformStamped.transform.rotation;
+
+            pose_pub_->publish(goal_pose);
+
+            // Prepare Nav2 goal
+            auto goal_msg = NavigateToPose::Goal();
+            goal_msg.pose = goal_pose;
+
+            // Send goal
+            auto send_goal_options = rclcpp_action::Client<NavigateToPose>::SendGoalOptions();
+            send_goal_options.goal_response_callback =
+                [this](std::shared_ptr<GoalHandleNav2> goal_handle) {
+                    if (!goal_handle) {
+                        RCLCPP_ERROR(this->get_logger(), "Goal was rejected by Nav2");
+                    } else {
+                        RCLCPP_INFO(this->get_logger(), "Goal accepted by Nav2");
+                        keepSendingGoal = false;
+                        //timer_->cancel();
+                    }
+                };
+            send_goal_options.result_callback =
+                [this](const GoalHandleNav2::WrappedResult & result) {
+                    if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
+                        RCLCPP_INFO(this->get_logger(), "Goal succeeded!");
+                        running1 = false;
+                    } else {
+                        RCLCPP_ERROR(this->get_logger(), "Goal failed or was aborted");
+                    }
+                };
+
+            nav2_client_->async_send_goal(goal_msg, send_goal_options);
+            RCLCPP_INFO(this->get_logger(), "Sent Nav2 goal at (%.2f, %.2f)", 
+                        goal_pose.pose.position.x, goal_pose.pose.position.y);
         }
-
-        // Convert to PoseStamped
-        geometry_msgs::msg::PoseStamped goal_pose;
-        goal_pose.header.stamp = this->now();
-        goal_pose.header.frame_id = "map";
-        goal_pose.pose.position.x = transformStamped.transform.translation.x;
-        goal_pose.pose.position.y = transformStamped.transform.translation.y;
-        goal_pose.pose.position.z = 0.0; // For ground robots, z is usually 0
-
-        // Extract yaw from the transform's rotation
-        double roll, pitch, yaw;
-        tf2::Quaternion tf_quat;
-        tf2::fromMsg(transformStamped.transform.rotation, tf_quat);
-        tf2::Matrix3x3(tf_quat).getRPY(roll, pitch, yaw);
-
-        // Create new quaternion with only yaw (roll=0, pitch=0)
-        tf2::Quaternion flat_quat;
-        flat_quat.setRPY(0, 0, yaw);
-        goal_pose.pose.orientation = tf2::toMsg(flat_quat);
-
-        // Add offsets
-        //double offset_x = -0.2; // -20 cm
-        goal_pose.pose.position.x += offset_x_ * std::cos(yaw);
-        goal_pose.pose.position.y += offset_x_ * std::sin(yaw);
-        //double offset_y = 0.1;
-        goal_pose.pose.position.x += -offset_y_ * std::sin(yaw);
-        goal_pose.pose.position.y +=  offset_y_ * std::cos(yaw);
-
-        // Only yaw is used for Nav2, but we copy the full quaternion
-        //goal_pose.pose.orientation = transformStamped.transform.rotation;
-
-        pose_pub_->publish(goal_pose);
-
-        // Prepare Nav2 goal
-        auto goal_msg = NavigateToPose::Goal();
-        goal_msg.pose = goal_pose;
-
-        // Send goal
-        auto send_goal_options = rclcpp_action::Client<NavigateToPose>::SendGoalOptions();
-        send_goal_options.goal_response_callback =
-            [this](std::shared_ptr<GoalHandleNav2> goal_handle) {
-                if (!goal_handle) {
-                    RCLCPP_ERROR(this->get_logger(), "Goal was rejected by Nav2");
-                } else {
-                    RCLCPP_INFO(this->get_logger(), "Goal accepted by Nav2");
-                }
-            };
-        send_goal_options.result_callback =
-            [this](const GoalHandleNav2::WrappedResult & result) {
-                if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
-                    RCLCPP_INFO(this->get_logger(), "Goal succeeded!");
-                    running1 = false;
-                } else {
-                    RCLCPP_ERROR(this->get_logger(), "Goal failed or was aborted");
-                }
-            };
-
-        nav2_client_->async_send_goal(goal_msg, send_goal_options);
-        RCLCPP_INFO(this->get_logger(), "Sent Nav2 goal at (%.2f, %.2f)", 
-                    goal_pose.pose.position.x, goal_pose.pose.position.y);
     }
 
     rclcpp_action::Client<NavigateToPose>::SharedPtr nav2_client_;
@@ -563,6 +574,7 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
     double offset_x_;
     double offset_y_;
+    std::atomic<bool> keepSendingGoal{true};
 };
 
 int main(int argc, char **argv)
@@ -608,7 +620,7 @@ int main(int argc, char **argv)
     std::cin.get();
     
     // create apriltag nav2 docking node
-    double offset_x1 = -0.85; double offset_y1 = 0.13;
+    double offset_x1 = -1.5; double offset_y1 = 0.13;
     auto const node_apriltag_nav2_docking = std::make_shared<TagGoalNav2Node>(offset_x1, offset_y1);
     // Spin in a separate thread
     std::thread spin_thread1([&](){
@@ -624,7 +636,7 @@ int main(int argc, char **argv)
     spin_thread1.join();
 
     // create apriltag nav2 node
-    double offset_x2 = -0.23; double offset_y2 = 0.13;
+    double offset_x2 = -0.45; double offset_y2 = 0.13; // -0.23, 0.13
     auto const node_apriltag_nav2 = std::make_shared<TagGoalNav2Node>(offset_x2, offset_y2);
     // Spin in a separate thread
     std::thread spin_thread3([&](){
