@@ -20,6 +20,7 @@ find_package(dynamixel_sdk REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2 REQUIRED)
+find_package(std_msgs REQUIRED)
 
 # Include rby1-sdk headers
 include_directories(~/rby1-sdk/include)
@@ -46,6 +47,11 @@ target_link_libraries(simple_base rby1-sdk::rby1-sdk)
 add_executable(moveit_simple_client src/moveit_simple_client.cpp)
 ament_target_dependencies(moveit_simple_client rclcpp moveit_ros_planning_interface geometry_msgs)
 install(TARGETS moveit_simple_client DESTINATION lib/${PROJECT_NAME})
+
+# simple torso
+add_executable(simple_torso src/simple_torso.cpp)
+ament_target_dependencies(simple_torso rclcpp moveit_ros_planning_interface geometry_msgs)
+install(TARGETS simple_torso DESTINATION lib/${PROJECT_NAME})
 
 # simple head
 add_executable(simple_head src/simple_head.cpp)

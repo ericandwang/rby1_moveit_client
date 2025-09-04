@@ -10,6 +10,7 @@
 #include "rby1-sdk/robot.h"
 #include "rby1-sdk/upc/device.h"
 #include "dynamixel_sdk/dynamixel_sdk.h"
+#include "std_msgs/msg/int32.hpp"
 
 #define PROTOCOL_VERSION 2.0
 #define BAUDRATE 2000000
@@ -34,6 +35,7 @@ std::vector<Eigen::Matrix<double, 2, 1>> q_min_max_vector;
 #define D2R 0.017453288888888
 
 std::atomic<bool> running{true};
+std::atomic<bool> is_sleeping{false};
 rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
 std::vector<double> latest_joint_positions_(24, 0.0);
 
@@ -338,6 +340,18 @@ int main(int argc, char * argv[])
         }
     });
 
+    auto flag_pub = node->create_publisher<std_msgs::msg::Int32>("waiting_flag", 10);
+    // Publisher thread (publishes at 10Hz)
+    std::thread([&](){
+        rclcpp::Rate rate(10); // 10Hz
+        std_msgs::msg::Int32 flag_msg;
+        while(rclcpp::ok()){
+            flag_msg.data = is_sleeping ? 1 : 0;
+            flag_pub->publish(flag_msg);
+            rate.sleep();
+        }
+    }).detach();
+
     // Offset from link_head_2 to camera_right
     //const double dx = -0.01;
     //const double dy = -0.060;
@@ -377,7 +391,7 @@ int main(int argc, char * argv[])
     joint_positions[0] = -0 * D2R;
     joint_positions[1] = -90 * D2R;
     joint_positions[2] = 0 * D2R;
-    joint_positions[3] = -90 * D2R; //-120 * D2R;
+    joint_positions[3] = -90 * D2R; //-120 * D2R (9/3/2025) // -90 * D2R (9/2/2025)
     joint_positions[4] = 0 * D2R;
     joint_positions[5] = -35 * D2R;
     joint_positions[6] = 0 * D2R;
@@ -485,11 +499,19 @@ int main(int argc, char * argv[])
         right_arm.execute(joint_plan);
     }
 
+    is_sleeping = true;
+    rclcpp::sleep_for(std::chrono::milliseconds(2000));
+    is_sleeping = false;
+
     joint_positions[6] = 150 * D2R;
     right_arm.setJointValueTarget(joint_positions);
     if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
         right_arm.execute(joint_plan);
     }
+
+    is_sleeping = true;
+    rclcpp::sleep_for(std::chrono::milliseconds(2000));
+    is_sleeping = false;
 
     // added rotations
     joint_positions[6] = 0 * D2R;
@@ -504,11 +526,19 @@ int main(int argc, char * argv[])
         right_arm.execute(joint_plan);
     }
 
+    is_sleeping = true;
+    rclcpp::sleep_for(std::chrono::milliseconds(2000));
+    is_sleeping = false;
+
     joint_positions[4] = -90 * D2R;
     right_arm.setJointValueTarget(joint_positions);
     if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
         right_arm.execute(joint_plan);
     }
+
+    is_sleeping = true;
+    rclcpp::sleep_for(std::chrono::milliseconds(2000));
+    is_sleeping = false;
 
     joint_positions[4] = 0 * D2R;
     right_arm.setJointValueTarget(joint_positions);
@@ -522,11 +552,19 @@ int main(int argc, char * argv[])
         right_arm.execute(joint_plan);
     }
 
+    is_sleeping = true;
+    rclcpp::sleep_for(std::chrono::milliseconds(2000));
+    is_sleeping = false;
+
     joint_positions[5] = -80 * D2R;
     right_arm.setJointValueTarget(joint_positions);
     if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
         right_arm.execute(joint_plan);
     }
+
+    is_sleeping = true;
+    rclcpp::sleep_for(std::chrono::milliseconds(2000));
+    is_sleeping = false;
 
     joint_positions[5] = -35 * D2R;
     right_arm.setJointValueTarget(joint_positions);
