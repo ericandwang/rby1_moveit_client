@@ -60,7 +60,7 @@ install(TARGETS simple_head DESTINATION lib/${PROJECT_NAME})
 
 # moveit + head + gripper for camera object recording
 add_executable(moveit_object_record src/moveit_object_record.cpp)
-ament_target_dependencies(moveit_object_record rclcpp moveit_ros_planning_interface geometry_msgs dynamixel_sdk)
+ament_target_dependencies(moveit_object_record rclcpp moveit_ros_planning_interface geometry_msgs dynamixel_sdk sensor_msgs)
 install(TARGETS moveit_object_record DESTINATION lib/${PROJECT_NAME})
 target_link_libraries(moveit_object_record rby1-sdk::rby1-sdk)
 

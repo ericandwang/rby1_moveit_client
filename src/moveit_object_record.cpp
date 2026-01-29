@@ -11,6 +11,7 @@
 #include "rby1-sdk/upc/device.h"
 #include "dynamixel_sdk/dynamixel_sdk.h"
 #include "std_msgs/msg/int32.hpp"
+#include "sensor_msgs/msg/temperature.hpp"
 
 #define PROTOCOL_VERSION 2.0
 #define BAUDRATE 2000000
@@ -340,13 +341,14 @@ int main(int argc, char * argv[])
         }
     });
 
-    auto flag_pub = node->create_publisher<std_msgs::msg::Int32>("waiting_flag", 10);
+    auto flag_pub = node->create_publisher<sensor_msgs::msg::Temperature>("waiting_flag", 10);
     // Publisher thread (publishes at 10Hz)
     std::thread([&](){
         rclcpp::Rate rate(10); // 10Hz
-        std_msgs::msg::Int32 flag_msg;
+        sensor_msgs::msg::Temperature flag_msg;
         while(rclcpp::ok()){
-            flag_msg.data = is_sleeping ? 1 : 0;
+            flag_msg.header.stamp = node->now();
+            flag_msg.temperature = is_sleeping ? 1.0 : 0.0;
             flag_pub->publish(flag_msg);
             rate.sleep();
         }
@@ -391,7 +393,7 @@ int main(int argc, char * argv[])
     joint_positions[0] = -0 * D2R;
     joint_positions[1] = -90 * D2R;
     joint_positions[2] = 0 * D2R;
-    joint_positions[3] = -90 * D2R; //-120 * D2R (9/3/2025) // -90 * D2R (9/2/2025)
+    joint_positions[3] = -110 * D2R; //-120 * D2R (9/3/2025) // -90 * D2R (9/10/2025)
     joint_positions[4] = 0 * D2R;
     joint_positions[5] = -35 * D2R;
     joint_positions[6] = 0 * D2R;
@@ -493,6 +495,10 @@ int main(int argc, char * argv[])
     std::cout << "Press Enter to rotate wrist..." << std::endl;
     std::cin.get();  // Waits for the user to press Enter
 
+    is_sleeping = true;
+    rclcpp::sleep_for(std::chrono::milliseconds(500));
+    is_sleeping = false;
+
     joint_positions[6] = -150 * D2R;
     right_arm.setJointValueTarget(joint_positions);
     if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
@@ -500,7 +506,7 @@ int main(int argc, char * argv[])
     }
 
     is_sleeping = true;
-    rclcpp::sleep_for(std::chrono::milliseconds(2000));
+    rclcpp::sleep_for(std::chrono::milliseconds(1000));
     is_sleeping = false;
 
     joint_positions[6] = 150 * D2R;
@@ -510,7 +516,7 @@ int main(int argc, char * argv[])
     }
 
     is_sleeping = true;
-    rclcpp::sleep_for(std::chrono::milliseconds(2000));
+    rclcpp::sleep_for(std::chrono::milliseconds(1000));
     is_sleeping = false;
 
     // added rotations
@@ -527,7 +533,7 @@ int main(int argc, char * argv[])
     }
 
     is_sleeping = true;
-    rclcpp::sleep_for(std::chrono::milliseconds(2000));
+    rclcpp::sleep_for(std::chrono::milliseconds(1000));
     is_sleeping = false;
 
     joint_positions[4] = -90 * D2R;
@@ -537,7 +543,7 @@ int main(int argc, char * argv[])
     }
 
     is_sleeping = true;
-    rclcpp::sleep_for(std::chrono::milliseconds(2000));
+    rclcpp::sleep_for(std::chrono::milliseconds(1000));
     is_sleeping = false;
 
     joint_positions[4] = 0 * D2R;
@@ -553,7 +559,7 @@ int main(int argc, char * argv[])
     }
 
     is_sleeping = true;
-    rclcpp::sleep_for(std::chrono::milliseconds(2000));
+    rclcpp::sleep_for(std::chrono::milliseconds(1000));
     is_sleeping = false;
 
     joint_positions[5] = -80 * D2R;
@@ -563,14 +569,79 @@ int main(int argc, char * argv[])
     }
 
     is_sleeping = true;
-    rclcpp::sleep_for(std::chrono::milliseconds(2000));
+    rclcpp::sleep_for(std::chrono::milliseconds(1000));
     is_sleeping = false;
 
+    joint_positions[3] = -115 * D2R;
+    right_arm.setJointValueTarget(joint_positions);
+    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+        right_arm.execute(joint_plan);
+    }
+
+    is_sleeping = true;
+    rclcpp::sleep_for(std::chrono::milliseconds(1000));
+    is_sleeping = false;
+
+    joint_positions[3] = -90 * D2R;
     joint_positions[5] = -35 * D2R;
     right_arm.setJointValueTarget(joint_positions);
     if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
         right_arm.execute(joint_plan);
     }
+
+    is_sleeping = true;
+    rclcpp::sleep_for(std::chrono::milliseconds(1000));
+    is_sleeping = false;
+
+    joint_positions[6] = -150 * D2R;
+    right_arm.setJointValueTarget(joint_positions);
+    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+        right_arm.execute(joint_plan);
+    }
+
+    is_sleeping = true;
+    rclcpp::sleep_for(std::chrono::milliseconds(1000));
+    is_sleeping = false;
+
+    joint_positions[5] = 10 * D2R;
+    right_arm.setJointValueTarget(joint_positions);
+    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+        right_arm.execute(joint_plan);
+    }
+
+    is_sleeping = true;
+    rclcpp::sleep_for(std::chrono::milliseconds(1000));
+    is_sleeping = false;
+
+
+    joint_positions[5] = -80 * D2R;
+    right_arm.setJointValueTarget(joint_positions);
+    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+        right_arm.execute(joint_plan);
+    }
+
+    is_sleeping = true;
+    rclcpp::sleep_for(std::chrono::milliseconds(1000));
+    is_sleeping = false;
+
+    joint_positions[3] = -115 * D2R;
+    right_arm.setJointValueTarget(joint_positions);
+    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+        right_arm.execute(joint_plan);
+    }
+
+    is_sleeping = true;
+    rclcpp::sleep_for(std::chrono::milliseconds(1000));
+    is_sleeping = false;
+
+    joint_positions[3] = -90 * D2R;
+    joint_positions[5] = -35 * D2R;
+    joint_positions[6] = 0 * D2R;
+    right_arm.setJointValueTarget(joint_positions);
+    if(right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+        right_arm.execute(joint_plan);
+    }
+
 
     std::cout << "Press Enter to reset positions..." << std::endl;
     std::cin.get();  // Waits for the user to press Enter
