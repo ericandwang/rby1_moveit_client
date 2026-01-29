@@ -100,6 +100,12 @@ ament_target_dependencies(apriltag_nav2_gripper rclcpp dynamixel_sdk moveit_ros_
 install(TARGETS apriltag_nav2_gripper DESTINATION lib/${PROJECT_NAME})
 target_link_libraries(apriltag_nav2_gripper rby1-sdk::rby1-sdk)
 
+# moveit coverage scan (systematic object rotation for camera)
+add_executable(moveit_coverage_scan src/moveit_coverage_scan.cpp)
+ament_target_dependencies(moveit_coverage_scan rclcpp moveit_ros_planning_interface geometry_msgs dynamixel_sdk sensor_msgs tf2_ros tf2_geometry_msgs tf2)
+install(TARGETS moveit_coverage_scan DESTINATION lib/${PROJECT_NAME})
+target_link_libraries(moveit_coverage_scan rby1-sdk::rby1-sdk)
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
