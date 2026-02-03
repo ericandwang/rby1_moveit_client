@@ -106,6 +106,16 @@ ament_target_dependencies(moveit_coverage_scan rclcpp moveit_ros_planning_interf
 install(TARGETS moveit_coverage_scan DESTINATION lib/${PROJECT_NAME})
 target_link_libraries(moveit_coverage_scan rby1-sdk::rby1-sdk)
 
+# Install config and launch for moveit_coverage_scan (IK params)
+install(DIRECTORY config/
+  DESTINATION share/${PROJECT_NAME}/config
+  FILES_MATCHING PATTERN "*.yaml"
+)
+install(DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+  FILES_MATCHING PATTERN "*.py"
+)
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
