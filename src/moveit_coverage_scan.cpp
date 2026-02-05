@@ -405,8 +405,8 @@ std::vector<int> findCoveragePath(const std::vector<ConfigNode>& graph,
             }
         }
 
-        // Stop if nothing reachable (safety: 4 rad max jump)
-        if (best_node == -1 || best_dist > 4.0) break;
+        // Stop if nothing reachable (safety: 6 rad max jump)
+        if (best_node == -1 || best_dist > 6.0) break;
 
         path.push_back(best_node);
         visited_coverage.insert(graph[best_node].coverage_idx);
@@ -734,14 +734,39 @@ int main(int argc, char * argv[])
                           << path.size() << " (coverage point "
                           << cov_idx << ")" << std::endl;
 
-                // Execute joint space move (same pattern as original code)
+                bool executed_viewpoint = false;
+
+                // First, try the primary IK config chosen for this viewpoint
                 right_arm.setJointValueTarget(graph[node_idx].joints);
                 if (right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
                     right_arm.execute(joint_plan);
+                    executed_viewpoint = true;
                 } else {
-                    std::cout << "  Planning failed, skipping viewpoint "
-                              << (step + 1) << std::endl;
-                    continue;
+                    std::cout << "  Planning failed for primary IK, trying alternative IK solutions for coverage point "
+                              << cov_idx << std::endl;
+
+                    // Fallback: try other IK configs that correspond to the same coverage point
+                    for (size_t i = 0; i < graph.size(); ++i) {
+                        if ((int)i == node_idx)
+                            continue;  // already tried this one
+                        if (graph[i].coverage_idx != cov_idx)
+                            continue;  // different coverage orientation
+
+                        right_arm.setJointValueTarget(graph[i].joints);
+                        if (right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+                            std::cout << "  Using alternative IK solution index " << i
+                                      << " for coverage point " << cov_idx << std::endl;
+                            right_arm.execute(joint_plan);
+                            executed_viewpoint = true;
+                            break;
+                        }
+                    }
+
+                    if (!executed_viewpoint) {
+                        std::cout << "  Planning failed for all IK solutions of coverage point "
+                                  << cov_idx << ", skipping viewpoint " << (step + 1) << std::endl;
+                        continue;
+                    }
                 }
 
                 // Pause for camera capture
