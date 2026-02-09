@@ -16,6 +16,10 @@
 #include <set>
 #include <limits>
 #include <cmath>
+#include <fstream>
+#include <mutex>
+#include <array>
+#include <sstream>
 
 #define PROTOCOL_VERSION 2.0
 #define BAUDRATE 2000000
@@ -44,9 +48,51 @@ std::atomic<bool> is_sleeping{false};
 rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
 std::vector<double> latest_joint_positions_(24, 0.0);
 
+// Right-arm joint trajectory logging (indices 8-14 = right_arm_0..right_arm_6)
+constexpr int RIGHT_ARM_START_IDX = 8;
+constexpr int RIGHT_ARM_JOINTS = 7;
+constexpr double JOINT_CHANGE_THRESHOLD = 0.001;  // rad
+
+std::vector<std::array<double, RIGHT_ARM_JOINTS>> right_arm_trajectory_buffer_;
+std::array<double, RIGHT_ARM_JOINTS> last_saved_right_arm_;
+std::atomic<bool> recording_right_arm_{false};
+std::atomic<bool> right_arm_first_sample_{true};
+std::mutex right_arm_buffer_mutex_;
+
 void encoder_callback(const sensor_msgs::msg::JointState::SharedPtr msg) {
-    for (size_t i = 0; i < 24; ++i) {
+    if (msg->position.size() < 15) {
+        return;  // Need at least indices 0-14 for right arm
+    }
+    for (size_t i = 0; i < 24 && i < msg->position.size(); ++i) {
         latest_joint_positions_[i] = msg->position[i];
+    }
+
+    if (!recording_right_arm_) {
+        return;
+    }
+
+    std::array<double, RIGHT_ARM_JOINTS> current;
+    for (int i = 0; i < RIGHT_ARM_JOINTS; ++i) {
+        current[i] = msg->position[RIGHT_ARM_START_IDX + i];
+    }
+
+    bool should_append = false;
+    if (right_arm_first_sample_) {
+        should_append = true;
+        right_arm_first_sample_ = false;
+    } else {
+        for (int i = 0; i < RIGHT_ARM_JOINTS; ++i) {
+            if (std::abs(current[i] - last_saved_right_arm_[i]) > JOINT_CHANGE_THRESHOLD) {
+                should_append = true;
+                break;
+            }
+        }
+    }
+
+    if (should_append) {
+        std::lock_guard<std::mutex> lock(right_arm_buffer_mutex_);
+        right_arm_trajectory_buffer_.push_back(current);
+        last_saved_right_arm_ = current;
     }
 }
 
@@ -301,6 +347,46 @@ Eigen::Quaterniond spherePointToOrientation(const Eigen::Vector3d& point,
     return (rot * current_orientation).normalized();
 }
 
+// Write right-arm trajectory buffer to .npy file (NumPy format v1.0).
+// Returns number of samples written, or 0 on failure.
+size_t writeRightArmTrajectoryNpy(const std::string& filepath) {
+    std::lock_guard<std::mutex> lock(right_arm_buffer_mutex_);
+    const size_t N = right_arm_trajectory_buffer_.size();
+    if (N == 0) {
+        return 0;
+    }
+
+    std::ofstream out(filepath, std::ios::binary);
+    if (!out) {
+        return 0;
+    }
+
+    // NumPy .npy format v1.0
+    const char magic[] = "\x93NUMPY";
+    out.write(magic, 6);
+    out.put(1);  // version major
+    out.put(0);  // version minor
+
+    std::ostringstream header_ss;
+    header_ss << "{'descr': '<f8', 'fortran_order': False, 'shape': (" << N << ", " << RIGHT_ARM_JOINTS << "), }";
+    std::string header_str = header_ss.str() + "\n";
+    size_t header_len = header_str.size();
+    // Pad to make (6 + 2 + 2 + header_len) % 64 == 0
+    size_t pad = (64 - (10 + header_len) % 64) % 64;
+    header_len += pad;
+    header_str.append(pad, ' ');
+
+    uint16_t header_len_le = static_cast<uint16_t>(header_len);
+    out.write(reinterpret_cast<const char*>(&header_len_le), 2);
+    out.write(header_str.data(), header_len);
+
+    for (const auto& row : right_arm_trajectory_buffer_) {
+        out.write(reinterpret_cast<const char*>(row.data()), RIGHT_ARM_JOINTS * sizeof(double));
+    }
+
+    return out.good() ? N : 0;
+}
+
 // Euclidean distance between two joint configurations
 double jointSpaceDistance(const std::vector<double>& a, const std::vector<double>& b) {
     double sum = 0.0;
@@ -432,6 +518,9 @@ int main(int argc, char * argv[])
     );
 
     auto const logger = rclcpp::get_logger("moveit_coverage_scan");
+
+    //node->declare_parameter_if_not_declared("joint_trajectory_output_path",
+    //    rclcpp::ParameterValue("joint_trajectory.npy"));
 
     // script start
     auto robot = rb::Robot<y1_model::A>::Create("192.168.30.1:50051");
@@ -644,6 +733,14 @@ int main(int argc, char * argv[])
     std::cout << "Press Enter to start coverage scan..." << std::endl;
     std::cin.get();
 
+    // Start recording right-arm joint trajectory (only when joints change)
+    {
+        std::lock_guard<std::mutex> lock(right_arm_buffer_mutex_);
+        right_arm_trajectory_buffer_.clear();
+    }
+    right_arm_first_sample_ = true;
+    recording_right_arm_ = true;
+
     const int NUM_SPHERE_POINTS = 14;
     const int NUM_IK_SEEDS = 8;
 
@@ -791,6 +888,17 @@ int main(int argc, char * argv[])
         if (right_arm.plan(joint_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
             right_arm.execute(joint_plan);
         }
+    }
+
+    // Stop recording and save right-arm trajectory to .npy
+    recording_right_arm_ = false;
+    std::string output_path = node->get_parameter("joint_trajectory_output_path").as_string();
+    size_t saved_count = writeRightArmTrajectoryNpy(output_path);
+    if (saved_count > 0) {
+        std::cout << "Saved right-arm joint trajectory: " << saved_count
+                  << " samples to " << output_path << std::endl;
+    } else {
+        std::cout << "No joint trajectory data to save (buffer empty or write failed)." << std::endl;
     }
 
     // ========================================================================
