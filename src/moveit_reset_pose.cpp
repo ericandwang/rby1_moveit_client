@@ -280,7 +280,7 @@ int main(int argc, char * argv[])
     // Set head to reset position
     std::vector<double> joint_positions_head(2);
     joint_positions_head[0] = 0;
-    joint_positions_head[1] = 15 * D2R;
+    joint_positions_head[1] = 20 * D2R;
     head.setJointValueTarget(joint_positions_head);
     moveit::planning_interface::MoveGroupInterface::Plan joint_plan_head;
     if(head.plan(joint_plan_head) == moveit::core::MoveItErrorCode::SUCCESS) {

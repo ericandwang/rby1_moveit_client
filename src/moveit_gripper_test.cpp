@@ -236,6 +236,32 @@ int main(int argc, char * argv[])
     auto subscription = node->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/apriltag/pose", 10, apriltag_callback);
 
+    auto object_pose_pub = node->create_publisher<geometry_msgs::msg::PoseStamped>(
+        "/debug/object_pose", 10);    
+    rclcpp::TimerBase::SharedPtr publish_timer;
+
+    publish_timer = node->create_wall_timer(
+        std::chrono::milliseconds(100),
+        [&]() {
+            RCLCPP_DEBUG(
+                node->get_logger(),
+                "Publishing object pose: x=%f y=%f z=%f",
+                object_position_x, object_position_y, object_position_z);
+
+            geometry_msgs::msg::PoseStamped ps;
+            ps.header.frame_id = "zed2i_left_camera_frame";
+            ps.header.stamp = node->now();
+            ps.pose.position.x = object_position_x;
+            ps.pose.position.y = object_position_y;
+            ps.pose.position.z = object_position_z;
+            ps.pose.orientation.w = 1.0;
+            ps.pose.orientation.x = 0.0;
+            ps.pose.orientation.y = 0.0;
+            ps.pose.orientation.z = 0.0;
+
+            object_pose_pub->publish(ps);
+        });
+
     // Spin in a separate thread
     std::thread spin_thread([&](){
         while (running) {
@@ -322,10 +348,14 @@ int main(int argc, char * argv[])
     //std::cout << "End effector: " << dual_arm.getEndEffectorLink() << std::endl;
 
     // Set frame references
-    //left_arm.setPoseReferenceFrame("link_head_2");
-    //right_arm.setPoseReferenceFrame("link_head_2");
-    left_arm.setPoseReferenceFrame("camera_right");
-    right_arm.setPoseReferenceFrame("camera_right");
+    // Offset from link_head_2 to camera_left
+    const double dx = -0.01;
+    const double dy = 0.060;
+    const double dz = 0.015;
+    left_arm.setPoseReferenceFrame("link_head_2");
+    right_arm.setPoseReferenceFrame("link_head_2");
+    //left_arm.setPoseReferenceFrame("zed2i_left_camera_frame");
+    //right_arm.setPoseReferenceFrame("zed2i_left_camera_frame");
 
     // Set arm to initial manipulation position
     std::vector<double> joint_positions(7);
@@ -389,9 +419,9 @@ int main(int argc, char * argv[])
     */
 
     // first send to position 15 cm behind, 15 cm above, and 15 cm to the right of object
-    target_pose_right.position.x = object_position_x - 0.15;
-    target_pose_right.position.y = object_position_y - 0.15;
-    target_pose_right.position.z = object_position_z + 0.15;
+    target_pose_right.position.x = object_position_x + dx - 0.15;
+    target_pose_right.position.y = object_position_y + dy - 0.15;
+    target_pose_right.position.z = object_position_z + dz + 0.15;
     //left_arm.setPoseTarget(target_pose_left,"ee_left");
     right_arm.setPoseTarget(target_pose_right,"ee_right");
     // Plan to the target poses
@@ -412,9 +442,9 @@ int main(int argc, char * argv[])
     }
 
     // then move over object (send to position 15 cm behind and 15 cm above object)
-    target_pose_right.position.x = object_position_x - 0.15;
-    target_pose_right.position.y = object_position_y;
-    target_pose_right.position.z = object_position_z + 0.15;
+    target_pose_right.position.x = object_position_x + dx - 0.15;
+    target_pose_right.position.y = object_position_y + dy;
+    target_pose_right.position.z = object_position_z + dz + 0.15;
     right_arm.setPoseTarget(target_pose_right,"ee_right");
     success = (right_arm.plan(right_plan) == moveit::core::MoveItErrorCode::SUCCESS);
     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -429,9 +459,9 @@ int main(int argc, char * argv[])
 
 
     // then send to grasping position (7.3 cm offset between ee_right and the palm)
-    target_pose_right.position.x = object_position_x - 0.073;
-    target_pose_right.position.y = object_position_y;
-    target_pose_right.position.z = object_position_z + 0.01;
+    target_pose_right.position.x = object_position_x + dx - 0.073;
+    target_pose_right.position.y = object_position_y + dy;
+    target_pose_right.position.z = object_position_z + dz + 0.01;
     right_arm.setPoseTarget(target_pose_right,"ee_right");
     success = (right_arm.plan(right_plan) == moveit::core::MoveItErrorCode::SUCCESS);
     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -450,9 +480,9 @@ int main(int argc, char * argv[])
     gripper_position_command(portHandler_gripper, packetHandler_gripper, activeIDs_gripper, 0.1, 0.6);
 
     // then move object up
-    target_pose_right.position.x = object_position_x - 0.073;
-    target_pose_right.position.y = object_position_y;
-    target_pose_right.position.z = object_position_z + 0.15;
+    target_pose_right.position.x = object_position_x + dx - 0.073;
+    target_pose_right.position.y = object_position_y + dy;
+    target_pose_right.position.z = object_position_z + dz + 0.15;
     right_arm.setPoseTarget(target_pose_right,"ee_right");
     success = (right_arm.plan(right_plan) == moveit::core::MoveItErrorCode::SUCCESS);
     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -466,9 +496,9 @@ int main(int argc, char * argv[])
     }
 
     //move to drop location 30 cm to the right and 15 cm above
-    target_pose_right.position.x = object_position_x - 0.073;
-    target_pose_right.position.y = object_position_y - 0.30;
-    target_pose_right.position.z = object_position_z + 0.15;
+    target_pose_right.position.x = object_position_x + dx - 0.073;
+    target_pose_right.position.y = object_position_y + dy - 0.30;
+    target_pose_right.position.z = object_position_z + dz + 0.15;
     right_arm.setPoseTarget(target_pose_right,"ee_right");
     success = (right_arm.plan(right_plan) == moveit::core::MoveItErrorCode::SUCCESS);
     std::this_thread::sleep_for(std::chrono::seconds(1));

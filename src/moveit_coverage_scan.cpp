@@ -369,12 +369,15 @@ size_t writeRightArmTrajectoryNpy(const std::string& filepath) {
 
     std::ostringstream header_ss;
     header_ss << "{'descr': '<f8', 'fortran_order': False, 'shape': (" << N << ", " << RIGHT_ARM_JOINTS << "), }";
-    std::string header_str = header_ss.str() + "\n";
-    size_t header_len = header_str.size();
+    // Build header as a single-line Python dict literal padded with spaces, ending in '\n'
+    std::string header_str = header_ss.str();
+    // HEADER_LEN includes all characters of header_str plus the final '\n'
+    size_t header_len = header_str.size() + 1;  // +1 for '\n'
     // Pad to make (6 + 2 + 2 + header_len) % 64 == 0
     size_t pad = (64 - (10 + header_len) % 64) % 64;
     header_len += pad;
     header_str.append(pad, ' ');
+    header_str.push_back('\n');
 
     uint16_t header_len_le = static_cast<uint16_t>(header_len);
     out.write(reinterpret_cast<const char*>(&header_len_le), 2);
@@ -491,8 +494,9 @@ std::vector<int> findCoveragePath(const std::vector<ConfigNode>& graph,
             }
         }
 
+
         // Stop if nothing reachable (safety: 6 rad max jump)
-        if (best_node == -1 || best_dist > 6.0) break;
+        if (best_node == -1 || best_dist > 5.2) break;
 
         path.push_back(best_node);
         visited_coverage.insert(graph[best_node].coverage_idx);
@@ -741,8 +745,8 @@ int main(int argc, char * argv[])
     right_arm_first_sample_ = true;
     recording_right_arm_ = true;
 
-    const int NUM_SPHERE_POINTS = 14;
-    const int NUM_IK_SEEDS = 8;
+    const int NUM_SPHERE_POINTS = 28;
+    const int NUM_IK_SEEDS = 16;
 
     // Get current robot state and end effector pose for IK
     auto current_state = right_arm.getCurrentState(10.0);
