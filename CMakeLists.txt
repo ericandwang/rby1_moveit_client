@@ -112,6 +112,12 @@ ament_target_dependencies(moveit_coverage_scan2 rclcpp moveit_ros_planning_inter
 install(TARGETS moveit_coverage_scan2 DESTINATION lib/${PROJECT_NAME})
 target_link_libraries(moveit_coverage_scan2 rby1-sdk::rby1-sdk)
 
+# moveit wrist scan (left arm sweeps RealSense around right-arm-held object)
+add_executable(moveit_wrist_scan src/moveit_wrist_scan.cpp)
+ament_target_dependencies(moveit_wrist_scan rclcpp moveit_ros_planning_interface geometry_msgs dynamixel_sdk sensor_msgs std_msgs)
+install(TARGETS moveit_wrist_scan DESTINATION lib/${PROJECT_NAME})
+target_link_libraries(moveit_wrist_scan rby1-sdk::rby1-sdk)
+
 # Install config and launch for moveit_coverage_scan (IK params)
 install(DIRECTORY config/
   DESTINATION share/${PROJECT_NAME}/config
