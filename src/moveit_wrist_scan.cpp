@@ -9,6 +9,7 @@
 #include "dynamixel_sdk/dynamixel_sdk.h"
 #include "std_msgs/msg/int32.hpp"
 #include "sensor_msgs/msg/temperature.hpp"
+#include <visualization_msgs/msg/marker_array.hpp>
 #include <random>
 #include <set>
 #include <limits>
@@ -426,8 +427,8 @@ std::vector<int> findCoveragePath(const std::vector<ConfigNode>& graph,
             }
         }
 
-        // Stop if nothing reachable (safety: 3 rad max jump)
-        if (best_node == -1 || best_dist > 3.0) break;
+        // Stop if nothing reachable (safety: 5.5 rad max jump)
+        if (best_node == -1 || best_dist > 5.5) break;
 
         path.push_back(best_node);
         visited_coverage.insert(graph[best_node].coverage_idx);
@@ -531,6 +532,7 @@ int main(int argc, char * argv[])
     });
 
     auto flag_pub = node->create_publisher<sensor_msgs::msg::Temperature>("waiting_flag", 10);
+    auto marker_pub = node->create_publisher<visualization_msgs::msg::MarkerArray>("/wrist_scan_markers", 10);
     // Publisher thread (publishes at 10Hz).
     // is_sleeping=true signals the capture node that the arm has settled at a viewpoint.
     // TODO (RealSense integration): capture node subscribes to waiting_flag and triggers
@@ -556,7 +558,7 @@ int main(int argc, char * argv[])
     Eigen::Vector3d object_center(0.448, -0.327, 1.337);  // world/base frame [m]
     double scan_radius = 0.25;                             // camera orbit radius [m]
     int NUM_SPHERE_POINTS = 20;
-    int NUM_IK_SEEDS = 8;
+    int NUM_IK_SEEDS = 12;
 
     // -------------------------------------------------------------------------
     // Step A: Command RIGHT ARM to holding pose (joint space)
@@ -608,7 +610,16 @@ int main(int argc, char * argv[])
     // Step C: Generate Fibonacci sphere viewpoints, sample IK for left arm
     // -------------------------------------------------------------------------
     RCLCPP_INFO(logger, "Generating %d Fibonacci sphere viewpoints around object...", NUM_SPHERE_POINTS);
-    auto sphere_points = generateFibonacciSphere(NUM_SPHERE_POINTS);
+    // Generate 2x points and keep only those in the left-arm-accessible hemisphere
+    // (sphere_point.y > -0.3 means camera is not further right than the object center)
+    auto sphere_points_all = generateFibonacciSphere(NUM_SPHERE_POINTS * 2);
+    std::vector<Eigen::Vector3d> sphere_points;
+    for (const auto& pt : sphere_points_all) {
+        if (pt.y() > -0.3) {
+            sphere_points.push_back(pt);
+            if ((int)sphere_points.size() == NUM_SPHERE_POINTS) break;
+        }
+    }
 
     std::vector<IKConfig> all_configs;
     int orientations_with_ik = 0;
@@ -650,6 +661,99 @@ int main(int argc, char * argv[])
 
     auto path = findCoveragePath(graph, start_joints, NUM_SPHERE_POINTS);
     RCLCPP_INFO(logger, "Coverage path: %zu viewpoints planned", path.size());
+
+    // -------------------------------------------------------------------------
+    // Visualize viewpoints and planned path in RViz (/wrist_scan_markers)
+    // -------------------------------------------------------------------------
+    {
+        visualization_msgs::msg::MarkerArray marker_array;
+        int mid = 0;
+        auto now = node->now();
+
+        // Build set of coverage indices that have IK solutions
+        std::set<int> covered_indices;
+        for (const auto& cfg : all_configs) covered_indices.insert(cfg.coverage_point_idx);
+
+        // Object center reference sphere (yellow)
+        visualization_msgs::msg::Marker obj;
+        obj.header.frame_id = "base";
+        obj.header.stamp = now;
+        obj.ns = "object"; obj.id = mid++;
+        obj.type = visualization_msgs::msg::Marker::SPHERE;
+        obj.action = visualization_msgs::msg::Marker::ADD;
+        obj.pose.position.x = object_center.x();
+        obj.pose.position.y = object_center.y();
+        obj.pose.position.z = object_center.z();
+        obj.pose.orientation.w = 1.0;
+        obj.scale.x = obj.scale.y = obj.scale.z = 0.06;
+        obj.color.r = 1.0; obj.color.g = 1.0; obj.color.b = 0.0; obj.color.a = 1.0;
+        marker_array.markers.push_back(obj);
+
+        // Viewpoint spheres + look-at arrows (green=IK found, red=no IK)
+        for (int i = 0; i < (int)sphere_points.size(); i++) {
+            Eigen::Vector3d cam = object_center + scan_radius * sphere_points[i];
+            bool has_ik = covered_indices.count(i) > 0;
+
+            visualization_msgs::msg::Marker vp;
+            vp.header.frame_id = "base"; vp.header.stamp = now;
+            vp.ns = "viewpoints"; vp.id = mid++;
+            vp.type = visualization_msgs::msg::Marker::SPHERE;
+            vp.action = visualization_msgs::msg::Marker::ADD;
+            vp.pose.position.x = cam.x();
+            vp.pose.position.y = cam.y();
+            vp.pose.position.z = cam.z();
+            vp.pose.orientation.w = 1.0;
+            vp.scale.x = vp.scale.y = vp.scale.z = 0.04;
+            vp.color.r = has_ik ? 0.0f : 1.0f;
+            vp.color.g = has_ik ? 1.0f : 0.0f;
+            vp.color.b = 0.0; vp.color.a = has_ik ? 1.0f : 0.4f;
+            marker_array.markers.push_back(vp);
+
+            // Arrow pointing from camera toward object (look-at direction)
+            Eigen::Quaterniond q = lookAtObject(cam, object_center);
+            visualization_msgs::msg::Marker arrow;
+            arrow.header.frame_id = "base"; arrow.header.stamp = now;
+            arrow.ns = "directions"; arrow.id = mid++;
+            arrow.type = visualization_msgs::msg::Marker::ARROW;
+            arrow.action = visualization_msgs::msg::Marker::ADD;
+            arrow.pose.position.x = cam.x();
+            arrow.pose.position.y = cam.y();
+            arrow.pose.position.z = cam.z();
+            arrow.pose.orientation.x = q.x();
+            arrow.pose.orientation.y = q.y();
+            arrow.pose.orientation.z = q.z();
+            arrow.pose.orientation.w = q.w();
+            arrow.scale.x = 0.08; arrow.scale.y = 0.01; arrow.scale.z = 0.01;
+            arrow.color.r = has_ik ? 0.0f : 0.8f;
+            arrow.color.g = has_ik ? 0.8f : 0.0f;
+            arrow.color.b = 0.0; arrow.color.a = has_ik ? 1.0f : 0.3f;
+            marker_array.markers.push_back(arrow);
+        }
+
+        // Planned path as a blue LINE_STRIP
+        if (!path.empty()) {
+            visualization_msgs::msg::Marker line;
+            line.header.frame_id = "base"; line.header.stamp = now;
+            line.ns = "path"; line.id = mid++;
+            line.type = visualization_msgs::msg::Marker::LINE_STRIP;
+            line.action = visualization_msgs::msg::Marker::ADD;
+            line.pose.orientation.w = 1.0;
+            line.scale.x = 0.012;
+            line.color.r = 0.0; line.color.g = 0.5; line.color.b = 1.0; line.color.a = 1.0;
+            for (int node_idx : path) {
+                Eigen::Vector3d cam = object_center + scan_radius * sphere_points[graph[node_idx].coverage_idx];
+                geometry_msgs::msg::Point pt;
+                pt.x = cam.x(); pt.y = cam.y(); pt.z = cam.z();
+                line.points.push_back(pt);
+            }
+            marker_array.markers.push_back(line);
+        }
+
+        // Brief sleep so RViz subscriber has time to connect, then publish
+        rclcpp::sleep_for(std::chrono::milliseconds(500));
+        marker_pub->publish(marker_array);
+        RCLCPP_INFO(logger, "Markers published to /wrist_scan_markers — add MarkerArray in RViz to view.");
+    }
 
     std::cout << "Press Enter to start wrist scan..." << std::endl;
     std::cin.get();
