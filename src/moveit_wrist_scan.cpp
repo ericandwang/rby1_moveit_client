@@ -665,8 +665,8 @@ int main(int argc, char * argv[])
     // -------------------------------------------------------------------------
     // Visualize viewpoints and planned path in RViz (/wrist_scan_markers)
     // -------------------------------------------------------------------------
+    visualization_msgs::msg::MarkerArray marker_array;
     {
-        visualization_msgs::msg::MarkerArray marker_array;
         int mid = 0;
         auto now = node->now();
 
@@ -749,14 +749,22 @@ int main(int argc, char * argv[])
             marker_array.markers.push_back(line);
         }
 
-        // Brief sleep so RViz subscriber has time to connect, then publish
-        rclcpp::sleep_for(std::chrono::milliseconds(500));
-        marker_pub->publish(marker_array);
-        RCLCPP_INFO(logger, "Markers published to /wrist_scan_markers — add MarkerArray in RViz to view.");
     }
+
+    // Republish markers continuously until user starts the scan
+    std::atomic<bool> stop_markers{false};
+    std::thread marker_thread([&]() {
+        while (!stop_markers) {
+            marker_pub->publish(marker_array);
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+    });
+    RCLCPP_INFO(logger, "Publishing markers to /wrist_scan_markers — set Fixed Frame to 'base' in RViz, then Add > By Topic > MarkerArray.");
 
     std::cout << "Press Enter to start wrist scan..." << std::endl;
     std::cin.get();
+    stop_markers = true;
+    marker_thread.join();
 
     // -------------------------------------------------------------------------
     // Step E: Execute path on LEFT ARM
