@@ -610,16 +610,7 @@ int main(int argc, char * argv[])
     // Step C: Generate Fibonacci sphere viewpoints, sample IK for left arm
     // -------------------------------------------------------------------------
     RCLCPP_INFO(logger, "Generating %d Fibonacci sphere viewpoints around object...", NUM_SPHERE_POINTS);
-    // Generate 2x points and keep only those in the left-arm-accessible hemisphere
-    // (sphere_point.y > -0.3 means camera is not further right than the object center)
-    auto sphere_points_all = generateFibonacciSphere(NUM_SPHERE_POINTS * 2);
-    std::vector<Eigen::Vector3d> sphere_points;
-    for (const auto& pt : sphere_points_all) {
-        if (pt.y() > -0.3) {
-            sphere_points.push_back(pt);
-            if ((int)sphere_points.size() == NUM_SPHERE_POINTS) break;
-        }
-    }
+    auto sphere_points = generateFibonacciSphere(NUM_SPHERE_POINTS);
 
     std::vector<IKConfig> all_configs;
     int orientations_with_ik = 0;
@@ -709,8 +700,9 @@ int main(int argc, char * argv[])
             vp.color.b = 0.0; vp.color.a = has_ik ? 1.0f : 0.4f;
             marker_array.markers.push_back(vp);
 
-            // Arrow pointing from camera toward object (look-at direction)
-            Eigen::Quaterniond q = lookAtObject(cam, object_center);
+            // Arrow pointing from camera toward object (RViz arrows point along X-axis)
+            Eigen::Vector3d toward = (object_center - cam).normalized();
+            Eigen::Quaterniond q = Eigen::Quaterniond::FromTwoVectors(Eigen::Vector3d(1, 0, 0), toward);
             visualization_msgs::msg::Marker arrow;
             arrow.header.frame_id = "base"; arrow.header.stamp = now;
             arrow.ns = "directions"; arrow.id = mid++;
