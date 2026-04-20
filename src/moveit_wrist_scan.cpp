@@ -10,6 +10,9 @@
 #include "std_msgs/msg/int32.hpp"
 #include "sensor_msgs/msg/temperature.hpp"
 #include <visualization_msgs/msg/marker_array.hpp>
+#include <moveit/planning_scene_interface/planning_scene_interface.h>
+#include <moveit_msgs/msg/collision_object.hpp>
+#include <shape_msgs/msg/solid_primitive.hpp>
 #include <random>
 #include <set>
 #include <limits>
@@ -606,6 +609,71 @@ int main(int argc, char * argv[])
 
     std::vector<double> start_joints;
     current_state->copyJointGroupPositions(left_jmg, start_joints);
+
+    // -------------------------------------------------------------------------
+    // Planning scene collision objects
+    // -------------------------------------------------------------------------
+    moveit::planning_interface::PlanningSceneInterface psi;
+
+    // Object 1: Wrist camera box on left EE (75x75x40mm, z+50mm offset)
+    {
+        moveit_msgs::msg::AttachedCollisionObject obj;
+        obj.link_name = "link_left_arm_6";
+        obj.object.id = "wrist_camera";
+        obj.object.header.frame_id = "link_left_arm_6";
+        obj.object.header.stamp = node->now();
+        shape_msgs::msg::SolidPrimitive box;
+        box.type = shape_msgs::msg::SolidPrimitive::BOX;
+        box.dimensions = {0.075, 0.075, 0.040};
+        geometry_msgs::msg::Pose pose;
+        pose.orientation.w = 1.0;
+        pose.position.z = 0.05;
+        obj.object.primitives.push_back(box);
+        obj.object.primitive_poses.push_back(pose);
+        obj.object.operation = moveit_msgs::msg::CollisionObject::ADD;
+        psi.applyAttachedCollisionObject(obj);
+        RCLCPP_INFO(logger, "Collision object added: wrist_camera (box) on link_left_arm_6");
+    }
+
+    // Object 2: Grasped object buffer sphere on right EE (radius 90mm)
+    {
+        moveit_msgs::msg::AttachedCollisionObject obj;
+        obj.link_name = "ee_right";
+        obj.object.id = "grasped_object";
+        obj.object.header.frame_id = "ee_right";
+        obj.object.header.stamp = node->now();
+        shape_msgs::msg::SolidPrimitive sphere;
+        sphere.type = shape_msgs::msg::SolidPrimitive::SPHERE;
+        sphere.dimensions = {0.09};
+        geometry_msgs::msg::Pose pose;
+        pose.orientation.w = 1.0;
+        obj.object.primitives.push_back(sphere);
+        obj.object.primitive_poses.push_back(pose);
+        obj.object.operation = moveit_msgs::msg::CollisionObject::ADD;
+        psi.applyAttachedCollisionObject(obj);
+        RCLCPP_INFO(logger, "Collision object added: grasped_object (sphere r=0.09) on ee_right");
+    }
+
+    // Object 3: ZED head camera box (170x40x40mm, at camera_link origin)
+    {
+        moveit_msgs::msg::AttachedCollisionObject obj;
+        obj.link_name = "camera_link";
+        obj.object.id = "zed_camera";
+        obj.object.header.frame_id = "camera_link";
+        obj.object.header.stamp = node->now();
+        shape_msgs::msg::SolidPrimitive box;
+        box.type = shape_msgs::msg::SolidPrimitive::BOX;
+        box.dimensions = {0.170, 0.040, 0.040};
+        geometry_msgs::msg::Pose pose;
+        pose.orientation.w = 1.0;
+        obj.object.primitives.push_back(box);
+        obj.object.primitive_poses.push_back(pose);
+        obj.object.operation = moveit_msgs::msg::CollisionObject::ADD;
+        psi.applyAttachedCollisionObject(obj);
+        RCLCPP_INFO(logger, "Collision object added: zed_camera (box) on camera_link");
+    }
+
+    rclcpp::sleep_for(std::chrono::milliseconds(500));
 
     // -------------------------------------------------------------------------
     // Step C: Generate Fibonacci sphere viewpoints, sample IK for left arm
