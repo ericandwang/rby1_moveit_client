@@ -619,7 +619,7 @@ int main(int argc, char * argv[])
     double camera_box_x = 0.0;   // wrist camera offset from link_left_arm_6
     double camera_box_y = 0.05;  // 5cm to the left
     double camera_box_z = -0.10; // 5cm original - 15cm = -10cm
-    double sphere_z     = 0.08;  // 8cm forward from ee_right
+    double sphere_z     = -0.08; // 8cm forward from ee_right
 
     // Object 1: Wrist camera box on left EE (75x75x40mm)
     {
@@ -675,6 +675,7 @@ int main(int argc, char * argv[])
         box.dimensions = {0.170, 0.040, 0.040};
         geometry_msgs::msg::Pose pose;
         pose.orientation.w = 1.0;
+        pose.position.z = 2.0;
         obj.object.primitives.push_back(box);
         obj.object.primitive_poses.push_back(pose);
         obj.object.operation = moveit_msgs::msg::CollisionObject::ADD;
