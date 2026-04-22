@@ -615,7 +615,13 @@ int main(int argc, char * argv[])
     // -------------------------------------------------------------------------
     moveit::planning_interface::PlanningSceneInterface psi;
 
-    // Object 1: Wrist camera box on left EE (75x75x40mm, z+50mm offset)
+    // *** TUNE THESE to align collision objects in RViz ***
+    double camera_box_x = 0.0;   // wrist camera offset from link_left_arm_6
+    double camera_box_y = 0.05;  // 5cm to the left
+    double camera_box_z = -0.10; // 5cm original - 15cm = -10cm
+    double sphere_z     = 0.08;  // 8cm forward from ee_right
+
+    // Object 1: Wrist camera box on left EE (75x75x40mm)
     {
         moveit_msgs::msg::AttachedCollisionObject obj;
         obj.link_name = "link_left_arm_6";
@@ -624,10 +630,12 @@ int main(int argc, char * argv[])
         obj.object.header.stamp = node->now();
         shape_msgs::msg::SolidPrimitive box;
         box.type = shape_msgs::msg::SolidPrimitive::BOX;
-        box.dimensions = {0.075, 0.075, 0.040};
+        box.dimensions = {0.0975, 0.0975, 0.052};
         geometry_msgs::msg::Pose pose;
         pose.orientation.w = 1.0;
-        pose.position.z = 0.05;
+        pose.position.x = camera_box_x;
+        pose.position.y = camera_box_y;
+        pose.position.z = camera_box_z;
         obj.object.primitives.push_back(box);
         obj.object.primitive_poses.push_back(pose);
         obj.object.operation = moveit_msgs::msg::CollisionObject::ADD;
@@ -647,6 +655,7 @@ int main(int argc, char * argv[])
         sphere.dimensions = {0.09};
         geometry_msgs::msg::Pose pose;
         pose.orientation.w = 1.0;
+        pose.position.z = sphere_z;
         obj.object.primitives.push_back(sphere);
         obj.object.primitive_poses.push_back(pose);
         obj.object.operation = moveit_msgs::msg::CollisionObject::ADD;
