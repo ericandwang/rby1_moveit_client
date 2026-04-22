@@ -672,14 +672,15 @@ int main(int argc, char * argv[])
         obj.object.header.stamp = node->now();
         shape_msgs::msg::SolidPrimitive box;
         box.type = shape_msgs::msg::SolidPrimitive::BOX;
-        box.dimensions = {0.170, 0.040, 0.040};
+        box.dimensions = {0.040, 0.170, 0.040};
         geometry_msgs::msg::Pose pose;
+        pose.position.z = 0.05;
         pose.orientation.w = 1.0;
         obj.object.primitives.push_back(box);
         obj.object.primitive_poses.push_back(pose);
         obj.object.operation = moveit_msgs::msg::CollisionObject::ADD;
         psi.applyAttachedCollisionObject(obj);
-        RCLCPP_INFO(logger, "Collision object added: zed_camera (box) on camera_link");
+        RCLCPP_INFO(logger, "Collision object added: zed_camera (box) on link_head_2");
     }
 
     rclcpp::sleep_for(std::chrono::milliseconds(500));
