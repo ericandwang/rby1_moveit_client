@@ -666,16 +666,17 @@ int main(int argc, char * argv[])
     // Object 3: ZED head camera box (170x40x40mm, at camera_link origin)
     {
         moveit_msgs::msg::AttachedCollisionObject obj;
-        obj.link_name = "camera_link";
+        obj.link_name = "base";
         obj.object.id = "zed_camera";
-        obj.object.header.frame_id = "camera_link";
+        obj.object.header.frame_id = "base";
         obj.object.header.stamp = node->now();
         shape_msgs::msg::SolidPrimitive box;
         box.type = shape_msgs::msg::SolidPrimitive::BOX;
         box.dimensions = {0.170, 0.040, 0.040};
         geometry_msgs::msg::Pose pose;
         pose.orientation.w = 1.0;
-        pose.position.z = 2.0;
+        pose.position.x = 0.115;
+        pose.position.z = 1.5;
         obj.object.primitives.push_back(box);
         obj.object.primitive_poses.push_back(pose);
         obj.object.operation = moveit_msgs::msg::CollisionObject::ADD;
