@@ -639,6 +639,7 @@ int main(int argc, char * argv[])
         obj.object.primitives.push_back(box);
         obj.object.primitive_poses.push_back(pose);
         obj.object.operation = moveit_msgs::msg::CollisionObject::ADD;
+        obj.touch_links = {"link_left_arm_6", "ee_left", "ee_finger_l1", "ee_finger_l2", "FT_sensor_L"};
         psi.applyAttachedCollisionObject(obj);
         RCLCPP_INFO(logger, "Collision object added: wrist_camera (box) on link_left_arm_6");
     }
@@ -659,6 +660,7 @@ int main(int argc, char * argv[])
         obj.object.primitives.push_back(sphere);
         obj.object.primitive_poses.push_back(pose);
         obj.object.operation = moveit_msgs::msg::CollisionObject::ADD;
+        obj.touch_links = {"ee_right", "link_right_arm_6", "ee_finger_r1", "ee_finger_r2", "FT_sensor_R"};
         psi.applyAttachedCollisionObject(obj);
         RCLCPP_INFO(logger, "Collision object added: grasped_object (sphere r=0.09) on ee_right");
     }
@@ -679,6 +681,7 @@ int main(int argc, char * argv[])
         obj.object.primitives.push_back(box);
         obj.object.primitive_poses.push_back(pose);
         obj.object.operation = moveit_msgs::msg::CollisionObject::ADD;
+        obj.touch_links = {"link_head_2", "link_head_1", "link_head_0"};
         psi.applyAttachedCollisionObject(obj);
         RCLCPP_INFO(logger, "Collision object added: zed_camera (box) on link_head_2");
     }
