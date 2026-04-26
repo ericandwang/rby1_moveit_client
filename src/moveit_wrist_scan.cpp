@@ -557,9 +557,9 @@ int main(int argc, char * argv[])
     using moveit::planning_interface::MoveGroupInterface;
 
     // Hardcoded constants
-    //Eigen::Vector3d object_center(0.448, -0.327, 1.337);  // world/base frame [m]
+    //Eigen::Vector3d object_center(0.338, -0.191, 1.362);  // world/base frame [m]
     Eigen::Vector3d object_center(0.415, -0.1500, 1.310);  // world/base frame [m]
-    double scan_radius = 0.25;                             // camera orbit radius [m]
+    double scan_radius = 0.2125;                           // camera orbit radius [m]
     int NUM_SPHERE_POINTS = 16;
     int NUM_IK_SEEDS = 6;
 
@@ -573,9 +573,9 @@ int main(int argc, char * argv[])
     right_hold_joints[0] = 0   * D2R;
     right_hold_joints[1] = -90 * D2R;
     right_hold_joints[2] = 0   * D2R;
-    right_hold_joints[3] = -110 * D2R;
+    right_hold_joints[3] = -135 * D2R;
     right_hold_joints[4] = 0   * D2R;
-    right_hold_joints[5] = -35 * D2R;
+    right_hold_joints[5] = -15 * D2R;
     right_hold_joints[6] = 0   * D2R;
 
     RCLCPP_INFO(logger, "Moving right arm to holding pose...");
