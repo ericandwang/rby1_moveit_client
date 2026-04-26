@@ -557,9 +557,10 @@ int main(int argc, char * argv[])
     using moveit::planning_interface::MoveGroupInterface;
 
     // Hardcoded constants
-    //Eigen::Vector3d object_center(0.338, -0.191, 1.362);  // world/base frame [m]
-    Eigen::Vector3d object_center(0.415, -0.1500, 1.310);  // world/base frame [m]
-    double scan_radius = 0.1;                              // camera orbit radius [m]
+    //Eigen::Vector3d object_center(0.338, -0.191, 1.362);  // joints: 0,-90,0,-135,0,-15,0
+    //Eigen::Vector3d object_center(0.415, -0.1500, 1.310);
+    Eigen::Vector3d object_center(0.427, -0.005, 1.365);   // joints: -71,-60,62,-113,56,3,-56
+    double scan_radius = 0.16;                             // camera orbit radius [m]
     int NUM_SPHERE_POINTS = 32;
     int NUM_IK_SEEDS = 6;
 
@@ -570,13 +571,20 @@ int main(int argc, char * argv[])
     moveit::planning_interface::MoveGroupInterface::Plan right_plan;
 
     std::vector<double> right_hold_joints(7);
-    right_hold_joints[0] = 0   * D2R;
-    right_hold_joints[1] = -90 * D2R;
-    right_hold_joints[2] = 0   * D2R;
-    right_hold_joints[3] = -135 * D2R;
-    right_hold_joints[4] = 0   * D2R;
-    right_hold_joints[5] = -15 * D2R;
-    right_hold_joints[6] = 0   * D2R;
+    // right_hold_joints[0] = 0   * D2R;  // pose A: 0,-90,0,-135,0,-15,0
+    // right_hold_joints[1] = -90 * D2R;
+    // right_hold_joints[2] = 0   * D2R;
+    // right_hold_joints[3] = -135 * D2R;
+    // right_hold_joints[4] = 0   * D2R;
+    // right_hold_joints[5] = -15 * D2R;
+    // right_hold_joints[6] = 0   * D2R;
+    right_hold_joints[0] = -71  * D2R;  // pose B: -71,-60,62,-113,56,3,-56
+    right_hold_joints[1] = -60  * D2R;
+    right_hold_joints[2] = 62   * D2R;
+    right_hold_joints[3] = -113 * D2R;
+    right_hold_joints[4] = 56   * D2R;
+    right_hold_joints[5] = 3    * D2R;
+    right_hold_joints[6] = -56  * D2R;
 
     RCLCPP_INFO(logger, "Moving right arm to holding pose...");
     right_arm.setJointValueTarget(right_hold_joints);
