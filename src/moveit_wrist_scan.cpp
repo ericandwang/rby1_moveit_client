@@ -306,22 +306,21 @@ Eigen::Quaterniond spherePointToOrientation(const Eigen::Vector3d& point,
     return (rot * current_orientation).normalized();
 }
 
-// Compute a camera orientation that points from camera_pos toward object_center.
-// X-axis = right, Y-axis = up, Z-axis = forward (into the scene, toward object).
-// This matches the RealSense D405 convention: Z points into scene along optical axis.
+// Compute an EE orientation where X-axis points from camera_pos toward object_center.
+// Matches the "gun barrel" camera mounting: optical axis = X of ee_left.
 Eigen::Quaterniond lookAtObject(const Eigen::Vector3d& camera_pos,
                                 const Eigen::Vector3d& object_center) {
-    Eigen::Vector3d forward = (object_center - camera_pos).normalized();
+    Eigen::Vector3d x_axis = (object_center - camera_pos).normalized();
     Eigen::Vector3d world_up(0, 0, 1);
-    Eigen::Vector3d right_candidate = forward.cross(world_up);
-    Eigen::Vector3d right = (right_candidate.norm() < 1e-6)
-        ? Eigen::Vector3d(1, 0, 0)
-        : right_candidate.normalized();
-    Eigen::Vector3d up = right.cross(forward);
+    Eigen::Vector3d y_raw = world_up - world_up.dot(x_axis) * x_axis;
+    Eigen::Vector3d y_axis = (y_raw.norm() < 1e-6)
+        ? Eigen::Vector3d(0, 1, 0)
+        : y_raw.normalized();
+    Eigen::Vector3d z_axis = x_axis.cross(y_axis);
     Eigen::Matrix3d R;
-    R.col(0) = right;
-    R.col(1) = up;
-    R.col(2) = forward;
+    R.col(0) = x_axis;
+    R.col(1) = y_axis;
+    R.col(2) = z_axis;
     return Eigen::Quaterniond(R).normalized();
 }
 
@@ -701,10 +700,12 @@ int main(int argc, char * argv[])
         // Camera position: on a sphere of scan_radius centered at the object
         Eigen::Vector3d camera_pos = object_center + scan_radius * sphere_points[i];
 
-        // Camera orientation: Z-axis points from camera toward object center
+        // EE target: X-axis toward object, position offset so camera lands at camera_pos
+        Eigen::Matrix3d R = lookAtObject(camera_pos, object_center).toRotationMatrix();
+        Eigen::Vector3d camera_offset(camera_box_x, camera_box_y, camera_box_z);
         Eigen::Isometry3d target_pose = Eigen::Isometry3d::Identity();
-        target_pose.translation() = camera_pos;
-        target_pose.linear() = lookAtObject(camera_pos, object_center).toRotationMatrix();
+        target_pose.translation() = camera_pos - R * camera_offset;
+        target_pose.linear() = R;
 
         auto configs = sampleIKConfigs(current_state, left_jmg, target_pose, i, NUM_IK_SEEDS);
 
@@ -761,6 +762,23 @@ int main(int argc, char * argv[])
         obj.scale.x = obj.scale.y = obj.scale.z = 0.06;
         obj.color.r = 1.0; obj.color.g = 1.0; obj.color.b = 0.0; obj.color.a = 1.0;
         marker_array.markers.push_back(obj);
+
+        // Camera direction arrow attached to moving link (orange, moves with arm)
+        {
+            visualization_msgs::msg::Marker cam_arrow;
+            cam_arrow.header.frame_id = "link_left_arm_6"; cam_arrow.header.stamp = now;
+            cam_arrow.ns = "camera_dir"; cam_arrow.id = mid++;
+            cam_arrow.type = visualization_msgs::msg::Marker::ARROW;
+            cam_arrow.action = visualization_msgs::msg::Marker::ADD;
+            cam_arrow.pose.position.x = camera_box_x;
+            cam_arrow.pose.position.y = camera_box_y;
+            cam_arrow.pose.position.z = camera_box_z;
+            cam_arrow.pose.orientation.w = 1.0;
+            cam_arrow.frame_locked = true;
+            cam_arrow.scale.x = 0.12; cam_arrow.scale.y = 0.015; cam_arrow.scale.z = 0.015;
+            cam_arrow.color.r = 1.0; cam_arrow.color.g = 0.5; cam_arrow.color.b = 0.0; cam_arrow.color.a = 1.0;
+            marker_array.markers.push_back(cam_arrow);
+        }
 
         // Viewpoint spheres + look-at arrows (green=IK found, red=no IK)
         for (int i = 0; i < (int)sphere_points.size(); i++) {
@@ -829,6 +847,8 @@ int main(int argc, char * argv[])
     std::atomic<bool> stop_markers{false};
     std::thread marker_thread([&]() {
         while (!stop_markers) {
+            auto ts = node->now();
+            for (auto& m : marker_array.markers) m.header.stamp = ts;
             marker_pub->publish(marker_array);
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
