@@ -306,17 +306,17 @@ Eigen::Quaterniond spherePointToOrientation(const Eigen::Vector3d& point,
     return (rot * current_orientation).normalized();
 }
 
-// Compute an EE orientation where X-axis points from camera_pos toward object_center.
-// Matches the "gun barrel" camera mounting: optical axis = X of ee_left.
+// Compute an EE orientation where -Z axis points from camera_pos toward object_center.
+// Matches the camera mounting: optical axis = -Z of link_left_arm_6.
 Eigen::Quaterniond lookAtObject(const Eigen::Vector3d& camera_pos,
                                 const Eigen::Vector3d& object_center) {
-    Eigen::Vector3d x_axis = (object_center - camera_pos).normalized();
+    Eigen::Vector3d z_axis = (camera_pos - object_center).normalized();  // -Z toward object
     Eigen::Vector3d world_up(0, 0, 1);
-    Eigen::Vector3d y_raw = world_up - world_up.dot(x_axis) * x_axis;
-    Eigen::Vector3d y_axis = (y_raw.norm() < 1e-6)
-        ? Eigen::Vector3d(0, 1, 0)
-        : y_raw.normalized();
-    Eigen::Vector3d z_axis = x_axis.cross(y_axis);
+    Eigen::Vector3d x_candidate = world_up.cross(z_axis);
+    Eigen::Vector3d x_axis = (x_candidate.norm() < 1e-6)
+        ? Eigen::Vector3d(1, 0, 0)
+        : x_candidate.normalized();
+    Eigen::Vector3d y_axis = z_axis.cross(x_axis);
     Eigen::Matrix3d R;
     R.col(0) = x_axis;
     R.col(1) = y_axis;
@@ -773,7 +773,14 @@ int main(int argc, char * argv[])
             cam_arrow.pose.position.x = camera_box_x;
             cam_arrow.pose.position.y = camera_box_y;
             cam_arrow.pose.position.z = camera_box_z;
-            cam_arrow.pose.orientation.w = 1.0;
+            {
+                Eigen::Quaterniond cam_q = Eigen::Quaterniond::FromTwoVectors(
+                    Eigen::Vector3d(1, 0, 0), Eigen::Vector3d(0, 0, -1));
+                cam_arrow.pose.orientation.x = cam_q.x();
+                cam_arrow.pose.orientation.y = cam_q.y();
+                cam_arrow.pose.orientation.z = cam_q.z();
+                cam_arrow.pose.orientation.w = cam_q.w();
+            }
             cam_arrow.frame_locked = true;
             cam_arrow.scale.x = 0.12; cam_arrow.scale.y = 0.015; cam_arrow.scale.z = 0.015;
             cam_arrow.color.r = 1.0; cam_arrow.color.g = 0.5; cam_arrow.color.b = 0.0; cam_arrow.color.a = 1.0;
