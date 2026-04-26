@@ -559,8 +559,8 @@ int main(int argc, char * argv[])
     // Hardcoded constants
     //Eigen::Vector3d object_center(0.338, -0.191, 1.362);  // world/base frame [m]
     Eigen::Vector3d object_center(0.415, -0.1500, 1.310);  // world/base frame [m]
-    double scan_radius = 0.2125;                           // camera orbit radius [m]
-    int NUM_SPHERE_POINTS = 16;
+    double scan_radius = 0.1;                              // camera orbit radius [m]
+    int NUM_SPHERE_POINTS = 32;
     int NUM_IK_SEEDS = 6;
 
     // -------------------------------------------------------------------------
