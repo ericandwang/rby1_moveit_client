@@ -8,6 +8,7 @@
 #include "rby1-sdk/upc/device.h"
 #include "dynamixel_sdk/dynamixel_sdk.h"
 #include "std_msgs/msg/int32.hpp"
+#include "std_msgs/msg/empty.hpp"
 #include "sensor_msgs/msg/temperature.hpp"
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
@@ -535,6 +536,7 @@ int main(int argc, char * argv[])
 
     auto flag_pub = node->create_publisher<sensor_msgs::msg::Temperature>("waiting_flag", 10);
     auto marker_pub = node->create_publisher<visualization_msgs::msg::MarkerArray>("/wrist_scan_markers", 10);
+    auto capture_pub = node->create_publisher<std_msgs::msg::Empty>("/wrist_scan/capture", 10);
     // Publisher thread (publishes at 10Hz).
     // is_sleeping=true signals the capture node that the arm has settled at a viewpoint.
     // TODO (RealSense integration): capture node subscribes to waiting_flag and triggers
@@ -917,11 +919,11 @@ int main(int argc, char * argv[])
             continue;
         }
 
-        // Arm has settled at viewpoint — signal capture node and pause
-        // TODO (RealSense integration): capture node triggers on is_sleeping==true to
-        //   acquire one depth frame, project to point cloud in base frame, and accumulate.
+        // Arm has settled — trigger capture node and pause for frame acquisition
         is_sleeping = true;
-        rclcpp::sleep_for(std::chrono::milliseconds(500));
+        rclcpp::sleep_for(std::chrono::milliseconds(300));  // let arm fully settle
+        capture_pub->publish(std_msgs::msg::Empty{});
+        rclcpp::sleep_for(std::chrono::milliseconds(300));
         is_sleeping = false;
     }
 

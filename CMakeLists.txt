@@ -22,6 +22,8 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(OpenCV REQUIRED)
 
 # Include rby1-sdk headers
 include_directories(~/rby1-sdk/include)
@@ -118,6 +120,12 @@ add_executable(moveit_wrist_scan src/moveit_wrist_scan.cpp)
 ament_target_dependencies(moveit_wrist_scan rclcpp moveit_ros_planning_interface moveit_ros_planning geometry_msgs dynamixel_sdk sensor_msgs std_msgs visualization_msgs)
 install(TARGETS moveit_wrist_scan DESTINATION lib/${PROJECT_NAME})
 target_link_libraries(moveit_wrist_scan rby1-sdk::rby1-sdk)
+
+# wrist scan capture node (RealSense RGB-D capture triggered by wrist scan)
+add_executable(wrist_scan_capture src/wrist_scan_capture.cpp)
+ament_target_dependencies(wrist_scan_capture rclcpp sensor_msgs std_msgs tf2_ros cv_bridge)
+target_link_libraries(wrist_scan_capture ${OpenCV_LIBS})
+install(TARGETS wrist_scan_capture DESTINATION lib/${PROJECT_NAME})
 
 # Install config and launch for moveit_coverage_scan (IK params)
 install(DIRECTORY config/
