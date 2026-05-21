@@ -302,41 +302,27 @@ bool isCameraViewpointInFront(const Eigen::Vector3d& camera_pos, double min_x) {
     return camera_pos.x() >= min_x;
 }
 
-// Left-arm links checked against min_x in the robot root frame (base: +X forward).
-static const std::vector<std::string> kLeftArmFrontLinks = {
-    "link_left_arm_3", "link_left_arm_4", "link_left_arm_5",
-    "link_left_arm_6", "ee_left",
-};
+// Left arm in front when joint 0 (left_arm_0) is less than 30 degrees.
+constexpr double kLeftArmJoint0MaxFrontDeg = 30.0;
 
-bool isLeftArmInFront(const moveit::core::RobotState& state, double min_x) {
-    moveit::core::RobotState check(state);
-    check.update();
-    for (const auto& link : kLeftArmFrontLinks) {
-        if (!check.getLinkModel(link)) continue;
-        if (check.getGlobalLinkTransform(link).translation().x() < min_x) {
-            return false;
-        }
-    }
-    return true;
+bool isLeftArmJoint0InFront(const std::vector<double>& joints) {
+    if (joints.empty()) return false;
+    return joints[0] < kLeftArmJoint0MaxFrontDeg * D2R;
 }
 
-bool isJointConfigInFront(
-    const moveit::core::RobotStatePtr& reference_state,
-    const moveit::core::JointModelGroup* jmg,
-    const std::vector<double>& joints,
-    double min_x)
+bool isLeftArmInFront(
+    const moveit::core::RobotState& state,
+    const moveit::core::JointModelGroup* jmg)
 {
-    moveit::core::RobotState state(*reference_state);
-    state.setJointGroupPositions(jmg, joints);
-    state.update();
-    return isLeftArmInFront(state, min_x);
+    std::vector<double> joints;
+    state.copyJointGroupPositions(jmg, joints);
+    return isLeftArmJoint0InFront(joints);
 }
 
 bool isPlannedTrajectoryInFront(
     const moveit::planning_interface::MoveGroupInterface::Plan& plan,
     const moveit::core::RobotStatePtr& reference_state,
-    const moveit::core::JointModelGroup* jmg,
-    double min_x)
+    const moveit::core::JointModelGroup* jmg)
 {
     const auto& points = plan.trajectory_.joint_trajectory.points;
     if (points.empty()) return false;
@@ -345,21 +331,20 @@ bool isPlannedTrajectoryInFront(
     for (const auto& pt : points) {
         state.setJointGroupPositions(jmg, pt.positions);
         state.update();
-        if (!isLeftArmInFront(state, min_x)) return false;
+        if (!isLeftArmInFront(state, jmg)) return false;
     }
     return true;
 }
 
-// Plan to joint target and reject if any trajectory sample goes behind the robot.
+// Plan to joint target; reject if goal or any trajectory sample has joint 0 >= 30 deg.
 bool planLeftArmInFront(
     moveit::planning_interface::MoveGroupInterface& arm,
     moveit::planning_interface::MoveGroupInterface::Plan& plan,
     const moveit::core::RobotStatePtr& reference_state,
     const moveit::core::JointModelGroup* jmg,
-    const std::vector<double>& joints,
-    double min_x)
+    const std::vector<double>& joints)
 {
-    if (!isJointConfigInFront(reference_state, jmg, joints, min_x)) {
+    if (!isLeftArmJoint0InFront(joints)) {
         return false;
     }
     arm.setStartStateToCurrentState();
@@ -367,7 +352,7 @@ bool planLeftArmInFront(
     if (arm.plan(plan) != moveit::core::MoveItErrorCode::SUCCESS) {
         return false;
     }
-    return isPlannedTrajectoryInFront(plan, reference_state, jmg, min_x);
+    return isPlannedTrajectoryInFront(plan, reference_state, jmg);
 }
 
 // Convert a Fibonacci sphere point to a target gripper orientation.
@@ -415,7 +400,6 @@ std::vector<IKConfig> sampleIKConfigs(
     const moveit::core::JointModelGroup* jmg,
     const Eigen::Isometry3d& target_pose,
     int coverage_idx,
-    double min_arm_x,
     int num_seeds = 8)
 {
     std::vector<IKConfig> configs;
@@ -444,7 +428,7 @@ std::vector<IKConfig> sampleIKConfigs(
         }
 
         // Attempt IK from this seed (100ms timeout); reject configs behind the robot
-        if (seed_state.setFromIK(jmg, target_pose, 0.1) && isLeftArmInFront(seed_state, min_arm_x)) {
+        if (seed_state.setFromIK(jmg, target_pose, 0.1) && isLeftArmInFront(seed_state, jmg)) {
             IKConfig config;
             seed_state.copyJointGroupPositions(jmg, config.joint_values);
             config.coverage_point_idx = coverage_idx;
@@ -637,7 +621,7 @@ int main(int argc, char * argv[])
     //Eigen::Vector3d object_center(0.415, -0.1500, 1.310);
     Eigen::Vector3d object_center(0.453, 0.060, 1.367);    // joints: -71,-60,62,-113,56,3,-56, +7cm along -Z of ee_right
     double scan_radius = 0.45;                             // camera orbit radius [m]
-    double min_camera_x = 0.0;                             // min +X in base for camera & left-arm links/trajectory
+    double min_camera_x = 0.0;                             // min +X in base for camera viewpoints only
     int NUM_SPHERE_POINTS = 32;
     int NUM_IK_SEEDS = 12;
 
@@ -655,11 +639,11 @@ int main(int argc, char * argv[])
     // right_hold_joints[4] = 0   * D2R;
     // right_hold_joints[5] = -15 * D2R;
     // right_hold_joints[6] = 0   * D2R;
-    right_hold_joints[0] = -71  * D2R;  // pose B: -71,-60,62,-113,56,3,-56
+    right_hold_joints[0] = -71  * D2R;  // pose B: -71,-60,62,-113,-90,3,-56
     right_hold_joints[1] = -60  * D2R;
     right_hold_joints[2] = 62   * D2R;
     right_hold_joints[3] = -113 * D2R;
-    right_hold_joints[4] = 56   * D2R;
+    right_hold_joints[4] = -90  * D2R;
     right_hold_joints[5] = 3    * D2R;
     right_hold_joints[6] = -56  * D2R;
 
@@ -691,7 +675,7 @@ int main(int argc, char * argv[])
     auto pre_scan_state = left_arm.getCurrentState(10.0);
     RCLCPP_INFO(logger, "Moving left arm to initial manipulation pose...");
     if (pre_scan_state && planLeftArmInFront(
-            left_arm, left_plan, pre_scan_state, left_jmg, left_initial_joints, min_camera_x)) {
+            left_arm, left_plan, pre_scan_state, left_jmg, left_initial_joints)) {
         left_arm.execute(left_plan);
     } else {
         RCLCPP_WARN(logger, "Left arm plan to initial pose failed or goes behind robot.");
@@ -822,7 +806,7 @@ int main(int argc, char * argv[])
         target_pose.linear() = R;
 
         auto configs = sampleIKConfigs(
-            current_state, left_jmg, target_pose, i, min_camera_x, NUM_IK_SEEDS);
+            current_state, left_jmg, target_pose, i, NUM_IK_SEEDS);
 
         if (!configs.empty()) {
             orientations_with_ik++;
@@ -832,9 +816,9 @@ int main(int argc, char * argv[])
     }
 
     RCLCPP_INFO(logger,
-                "IK sampling complete: %zu configs, %d/%d with IK (%d camera viewpoints skipped, x < %.2f m; arm configs also require links in front)",
+                "IK sampling complete: %zu configs, %d/%d with IK (%d camera viewpoints skipped, x < %.2f m; arm requires joint0 < %.0f deg)",
                 all_configs.size(), orientations_with_ik, NUM_SPHERE_POINTS,
-                orientations_skipped_behind, min_camera_x);
+                orientations_skipped_behind, min_camera_x, kLeftArmJoint0MaxFrontDeg);
 
     if (all_configs.empty()) {
         RCLCPP_ERROR(logger, "No IK solutions found. Aborting scan.");
@@ -1012,7 +996,7 @@ int main(int argc, char * argv[])
 
         if (planLeftArmInFront(
                 left_arm, left_plan, current_state, left_jmg,
-                graph[node_idx].joints, min_camera_x)) {
+                graph[node_idx].joints)) {
             left_arm.execute(left_plan);
             executed = true;
         } else {
@@ -1026,7 +1010,7 @@ int main(int argc, char * argv[])
 
                 if (planLeftArmInFront(
                         left_arm, left_plan, current_state, left_jmg,
-                        graph[i].joints, min_camera_x)) {
+                        graph[i].joints)) {
                     RCLCPP_INFO(logger,
                         "  Using alternative IK solution %zu for coverage point %d", i, cov_idx);
                     left_arm.execute(left_plan);
@@ -1060,7 +1044,7 @@ int main(int argc, char * argv[])
     std::vector<double> zero_joints(7, 0.0);
     current_state = left_arm.getCurrentState(5.0);
     if (current_state && planLeftArmInFront(
-            left_arm, left_plan, current_state, left_jmg, zero_joints, min_camera_x)) {
+            left_arm, left_plan, current_state, left_jmg, zero_joints)) {
         left_arm.execute(left_plan);
     } else {
         RCLCPP_WARN(logger, "Left arm reset plan failed or goes behind robot.");
