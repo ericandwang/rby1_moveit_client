@@ -302,6 +302,74 @@ bool isCameraViewpointInFront(const Eigen::Vector3d& camera_pos, double min_x) {
     return camera_pos.x() >= min_x;
 }
 
+// Left-arm links checked against min_x in the robot root frame (base: +X forward).
+static const std::vector<std::string> kLeftArmFrontLinks = {
+    "link_left_arm_3", "link_left_arm_4", "link_left_arm_5",
+    "link_left_arm_6", "ee_left",
+};
+
+bool isLeftArmInFront(const moveit::core::RobotState& state, double min_x) {
+    moveit::core::RobotState check(state);
+    check.update();
+    for (const auto& link : kLeftArmFrontLinks) {
+        if (!check.getLinkModel(link)) continue;
+        if (check.getGlobalLinkTransform(link).translation().x() < min_x) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool isJointConfigInFront(
+    const moveit::core::RobotStatePtr& reference_state,
+    const moveit::core::JointModelGroup* jmg,
+    const std::vector<double>& joints,
+    double min_x)
+{
+    moveit::core::RobotState state(*reference_state);
+    state.setJointGroupPositions(jmg, joints);
+    state.update();
+    return isLeftArmInFront(state, min_x);
+}
+
+bool isPlannedTrajectoryInFront(
+    const moveit::planning_interface::MoveGroupInterface::Plan& plan,
+    const moveit::core::RobotStatePtr& reference_state,
+    const moveit::core::JointModelGroup* jmg,
+    double min_x)
+{
+    const auto& points = plan.trajectory_.joint_trajectory.points;
+    if (points.empty()) return false;
+
+    moveit::core::RobotState state(*reference_state);
+    for (const auto& pt : points) {
+        state.setJointGroupPositions(jmg, pt.positions);
+        state.update();
+        if (!isLeftArmInFront(state, min_x)) return false;
+    }
+    return true;
+}
+
+// Plan to joint target and reject if any trajectory sample goes behind the robot.
+bool planLeftArmInFront(
+    moveit::planning_interface::MoveGroupInterface& arm,
+    moveit::planning_interface::MoveGroupInterface::Plan& plan,
+    const moveit::core::RobotStatePtr& reference_state,
+    const moveit::core::JointModelGroup* jmg,
+    const std::vector<double>& joints,
+    double min_x)
+{
+    if (!isJointConfigInFront(reference_state, jmg, joints, min_x)) {
+        return false;
+    }
+    arm.setStartStateToCurrentState();
+    arm.setJointValueTarget(joints);
+    if (arm.plan(plan) != moveit::core::MoveItErrorCode::SUCCESS) {
+        return false;
+    }
+    return isPlannedTrajectoryInFront(plan, reference_state, jmg, min_x);
+}
+
 // Convert a Fibonacci sphere point to a target gripper orientation.
 // Rotates the reference direction (0,0,1) onto the sphere point,
 // then applies that rotation to the current gripper orientation.
@@ -347,6 +415,7 @@ std::vector<IKConfig> sampleIKConfigs(
     const moveit::core::JointModelGroup* jmg,
     const Eigen::Isometry3d& target_pose,
     int coverage_idx,
+    double min_arm_x,
     int num_seeds = 8)
 {
     std::vector<IKConfig> configs;
@@ -374,8 +443,8 @@ std::vector<IKConfig> sampleIKConfigs(
             }
         }
 
-        // Attempt IK from this seed (100ms timeout)
-        if (seed_state.setFromIK(jmg, target_pose, 0.1)) {
+        // Attempt IK from this seed (100ms timeout); reject configs behind the robot
+        if (seed_state.setFromIK(jmg, target_pose, 0.1) && isLeftArmInFront(seed_state, min_arm_x)) {
             IKConfig config;
             seed_state.copyJointGroupPositions(jmg, config.joint_values);
             config.coverage_point_idx = coverage_idx;
@@ -568,7 +637,7 @@ int main(int argc, char * argv[])
     //Eigen::Vector3d object_center(0.415, -0.1500, 1.310);
     Eigen::Vector3d object_center(0.453, 0.060, 1.367);    // joints: -71,-60,62,-113,56,3,-56, +7cm along -Z of ee_right
     double scan_radius = 0.32;                             // camera orbit radius [m]
-    double min_camera_x = 0.0;                             // skip viewpoints behind robot (-X in base)
+    double min_camera_x = 0.0;                             // min +X in base for camera & left-arm links/trajectory
     int NUM_SPHERE_POINTS = 32;
     int NUM_IK_SEEDS = 12;
 
@@ -618,12 +687,14 @@ int main(int argc, char * argv[])
     left_initial_joints[5] = -10  * D2R;
     left_initial_joints[6] = 0    * D2R;
 
+    const auto* left_jmg = left_arm.getRobotModel()->getJointModelGroup("rby1_left_arm");
+    auto pre_scan_state = left_arm.getCurrentState(10.0);
     RCLCPP_INFO(logger, "Moving left arm to initial manipulation pose...");
-    left_arm.setJointValueTarget(left_initial_joints);
-    if (left_arm.plan(left_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+    if (pre_scan_state && planLeftArmInFront(
+            left_arm, left_plan, pre_scan_state, left_jmg, left_initial_joints, min_camera_x)) {
         left_arm.execute(left_plan);
     } else {
-        RCLCPP_WARN(logger, "Left arm plan to initial pose failed.");
+        RCLCPP_WARN(logger, "Left arm plan to initial pose failed or goes behind robot.");
     }
     rclcpp::sleep_for(std::chrono::milliseconds(1000));
 
@@ -641,7 +712,6 @@ int main(int argc, char * argv[])
     current_state->update();
 
     auto robot_model = left_arm.getRobotModel();
-    const auto* left_jmg = robot_model->getJointModelGroup("rby1_left_arm");
 
     std::vector<double> start_joints;
     current_state->copyJointGroupPositions(left_jmg, start_joints);
@@ -751,7 +821,8 @@ int main(int argc, char * argv[])
         target_pose.translation() = camera_pos - R * camera_offset;
         target_pose.linear() = R;
 
-        auto configs = sampleIKConfigs(current_state, left_jmg, target_pose, i, NUM_IK_SEEDS);
+        auto configs = sampleIKConfigs(
+            current_state, left_jmg, target_pose, i, min_camera_x, NUM_IK_SEEDS);
 
         if (!configs.empty()) {
             orientations_with_ik++;
@@ -761,7 +832,7 @@ int main(int argc, char * argv[])
     }
 
     RCLCPP_INFO(logger,
-                "IK sampling complete: %zu configs, %d/%d with IK (%d skipped behind robot, x < %.2f m)",
+                "IK sampling complete: %zu configs, %d/%d with IK (%d camera viewpoints skipped, x < %.2f m; arm configs also require links in front)",
                 all_configs.size(), orientations_with_ik, NUM_SPHERE_POINTS,
                 orientations_skipped_behind, min_camera_x);
 
@@ -929,26 +1000,35 @@ int main(int argc, char * argv[])
         RCLCPP_INFO(logger, "Viewpoint %d/%d (coverage point %d)",
                     step + 1, (int)path.size(), cov_idx);
 
-        // Fetch fresh state before each move
+        // Fetch fresh state before each move (used for trajectory behind-robot checks)
         current_state = left_arm.getCurrentState(5.0);
+        if (!current_state) {
+            RCLCPP_WARN(logger, "  Skipping viewpoint %d — could not get robot state", step + 1);
+            continue;
+        }
+        current_state->update();
 
         bool executed = false;
 
-        left_arm.setJointValueTarget(graph[node_idx].joints);
-        if (left_arm.plan(left_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+        if (planLeftArmInFront(
+                left_arm, left_plan, current_state, left_jmg,
+                graph[node_idx].joints, min_camera_x)) {
             left_arm.execute(left_plan);
             executed = true;
         } else {
-            RCLCPP_WARN(logger, "  Primary IK failed for coverage point %d, trying alternatives...", cov_idx);
+            RCLCPP_WARN(logger,
+                "  Primary plan failed or goes behind robot for coverage point %d, trying alternatives...",
+                cov_idx);
 
-            // Fallback: try other IK configs for the same coverage point
             for (size_t i = 0; i < graph.size(); ++i) {
                 if ((int)i == node_idx) continue;
                 if (graph[i].coverage_idx != cov_idx) continue;
 
-                left_arm.setJointValueTarget(graph[i].joints);
-                if (left_arm.plan(left_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
-                    RCLCPP_INFO(logger, "  Using alternative IK solution %zu for coverage point %d", i, cov_idx);
+                if (planLeftArmInFront(
+                        left_arm, left_plan, current_state, left_jmg,
+                        graph[i].joints, min_camera_x)) {
+                    RCLCPP_INFO(logger,
+                        "  Using alternative IK solution %zu for coverage point %d", i, cov_idx);
                     left_arm.execute(left_plan);
                     executed = true;
                     break;
@@ -957,8 +1037,9 @@ int main(int argc, char * argv[])
         }
 
         if (!executed) {
-            RCLCPP_WARN(logger, "  Skipping viewpoint %d/%d (coverage point %d) — no valid plan",
-                        step + 1, (int)path.size(), cov_idx);
+            RCLCPP_WARN(logger,
+                "  Skipping viewpoint %d/%d (coverage point %d) — no in-front plan",
+                step + 1, (int)path.size(), cov_idx);
             continue;
         }
 
@@ -977,11 +1058,12 @@ int main(int argc, char * argv[])
     // -------------------------------------------------------------------------
     RCLCPP_INFO(logger, "Returning left arm to zero...");
     std::vector<double> zero_joints(7, 0.0);
-    left_arm.setJointValueTarget(zero_joints);
-    if (left_arm.plan(left_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+    current_state = left_arm.getCurrentState(5.0);
+    if (current_state && planLeftArmInFront(
+            left_arm, left_plan, current_state, left_jmg, zero_joints, min_camera_x)) {
         left_arm.execute(left_plan);
     } else {
-        RCLCPP_WARN(logger, "Left arm reset plan failed.");
+        RCLCPP_WARN(logger, "Left arm reset plan failed or goes behind robot.");
     }
 
     // -------------------------------------------------------------------------
