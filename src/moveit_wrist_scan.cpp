@@ -598,11 +598,32 @@ int main(int argc, char * argv[])
     rclcpp::sleep_for(std::chrono::milliseconds(1000));
 
     // -------------------------------------------------------------------------
-    // Step B: Get LEFT ARM MoveGroupInterface and current state
+    // Step A2: Move LEFT ARM to initial manipulation pose (better IK / collision context)
     // -------------------------------------------------------------------------
     auto left_arm = MoveGroupInterface(node, "rby1_left_arm");
     moveit::planning_interface::MoveGroupInterface::Plan left_plan;
 
+    std::vector<double> left_initial_joints(7);
+    left_initial_joints[0] = 0    * D2R;
+    left_initial_joints[1] = -90  * D2R;
+    left_initial_joints[2] = 0    * D2R;
+    left_initial_joints[3] = -110 * D2R;
+    left_initial_joints[4] = 0    * D2R;
+    left_initial_joints[5] = -35  * D2R;
+    left_initial_joints[6] = 0    * D2R;
+
+    RCLCPP_INFO(logger, "Moving left arm to initial manipulation pose...");
+    left_arm.setJointValueTarget(left_initial_joints);
+    if (left_arm.plan(left_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+        left_arm.execute(left_plan);
+    } else {
+        RCLCPP_WARN(logger, "Left arm plan to initial pose failed.");
+    }
+    rclcpp::sleep_for(std::chrono::milliseconds(1000));
+
+    // -------------------------------------------------------------------------
+    // Step B: Get LEFT ARM current state for wrist scan IK
+    // -------------------------------------------------------------------------
     auto current_state = left_arm.getCurrentState(10.0);
     if (!current_state) {
         RCLCPP_ERROR(logger, "Failed to get left arm current state. Aborting scan.");
