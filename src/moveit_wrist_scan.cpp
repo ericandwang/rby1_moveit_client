@@ -636,7 +636,7 @@ int main(int argc, char * argv[])
     //Eigen::Vector3d object_center(0.338, -0.191, 1.362);  // joints: 0,-90,0,-135,0,-15,0
     //Eigen::Vector3d object_center(0.415, -0.1500, 1.310);
     Eigen::Vector3d object_center(0.453, 0.060, 1.367);    // joints: -71,-60,62,-113,56,3,-56, +7cm along -Z of ee_right
-    double scan_radius = 0.32;                             // camera orbit radius [m]
+    double scan_radius = 0.45;                             // camera orbit radius [m]
     double min_camera_x = 0.0;                             // min +X in base for camera & left-arm links/trajectory
     int NUM_SPHERE_POINTS = 32;
     int NUM_IK_SEEDS = 12;
