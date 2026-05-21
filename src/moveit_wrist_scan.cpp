@@ -297,6 +297,11 @@ std::vector<Eigen::Vector3d> generateFibonacciSphere(int n) {
     return points;
 }
 
+// Camera must stay in front of the robot (base frame: +X forward).
+bool isCameraViewpointInFront(const Eigen::Vector3d& camera_pos, double min_x) {
+    return camera_pos.x() >= min_x;
+}
+
 // Convert a Fibonacci sphere point to a target gripper orientation.
 // Rotates the reference direction (0,0,1) onto the sphere point,
 // then applies that rotation to the current gripper orientation.
@@ -562,7 +567,8 @@ int main(int argc, char * argv[])
     //Eigen::Vector3d object_center(0.338, -0.191, 1.362);  // joints: 0,-90,0,-135,0,-15,0
     //Eigen::Vector3d object_center(0.415, -0.1500, 1.310);
     Eigen::Vector3d object_center(0.453, 0.060, 1.367);    // joints: -71,-60,62,-113,56,3,-56, +7cm along -Z of ee_right
-    double scan_radius = 0.16;                             // camera orbit radius [m]
+    double scan_radius = 0.32;                             // camera orbit radius [m]
+    double min_camera_x = 0.0;                             // skip viewpoints behind robot (-X in base)
     int NUM_SPHERE_POINTS = 32;
     int NUM_IK_SEEDS = 12;
 
@@ -726,10 +732,17 @@ int main(int argc, char * argv[])
 
     std::vector<IKConfig> all_configs;
     int orientations_with_ik = 0;
+    int orientations_skipped_behind = 0;
 
     for (int i = 0; i < (int)sphere_points.size(); i++) {
         // Camera position: on a sphere of scan_radius centered at the object
         Eigen::Vector3d camera_pos = object_center + scan_radius * sphere_points[i];
+
+        if (!isCameraViewpointInFront(camera_pos, min_camera_x)) {
+            orientations_skipped_behind++;
+            RCLCPP_DEBUG(logger, "  Viewpoint %d skipped (behind robot, x=%.3f)", i, camera_pos.x());
+            continue;
+        }
 
         // EE target: X-axis toward object, position offset so camera lands at camera_pos
         Eigen::Matrix3d R = lookAtObject(camera_pos, object_center).toRotationMatrix();
@@ -747,8 +760,10 @@ int main(int argc, char * argv[])
         all_configs.insert(all_configs.end(), configs.begin(), configs.end());
     }
 
-    RCLCPP_INFO(logger, "IK sampling complete: %zu configs for %d/%d viewpoints",
-                all_configs.size(), orientations_with_ik, NUM_SPHERE_POINTS);
+    RCLCPP_INFO(logger,
+                "IK sampling complete: %zu configs, %d/%d with IK (%d skipped behind robot, x < %.2f m)",
+                all_configs.size(), orientations_with_ik, NUM_SPHERE_POINTS,
+                orientations_skipped_behind, min_camera_x);
 
     if (all_configs.empty()) {
         RCLCPP_ERROR(logger, "No IK solutions found. Aborting scan.");
@@ -818,10 +833,11 @@ int main(int argc, char * argv[])
             marker_array.markers.push_back(cam_arrow);
         }
 
-        // Viewpoint spheres + look-at arrows (green=IK found, red=no IK)
+        // Viewpoint spheres + look-at arrows (green=IK, gray=behind robot, red=no IK)
         for (int i = 0; i < (int)sphere_points.size(); i++) {
             Eigen::Vector3d cam = object_center + scan_radius * sphere_points[i];
-            bool has_ik = covered_indices.count(i) > 0;
+            bool behind_robot = !isCameraViewpointInFront(cam, min_camera_x);
+            bool has_ik = !behind_robot && covered_indices.count(i) > 0;
 
             visualization_msgs::msg::Marker vp;
             vp.header.frame_id = "base"; vp.header.stamp = now;
@@ -833,10 +849,16 @@ int main(int argc, char * argv[])
             vp.pose.position.z = cam.z();
             vp.pose.orientation.w = 1.0;
             vp.scale.x = vp.scale.y = vp.scale.z = 0.04;
-            vp.color.r = has_ik ? 0.0f : 1.0f;
-            vp.color.g = has_ik ? 1.0f : 0.0f;
-            vp.color.b = 0.0; vp.color.a = has_ik ? 1.0f : 0.4f;
+            if (behind_robot) {
+                vp.color.r = 0.5f; vp.color.g = 0.5f; vp.color.b = 0.5f; vp.color.a = 0.35f;
+            } else if (has_ik) {
+                vp.color.r = 0.0f; vp.color.g = 1.0f; vp.color.b = 0.0f; vp.color.a = 1.0f;
+            } else {
+                vp.color.r = 1.0f; vp.color.g = 0.0f; vp.color.b = 0.0f; vp.color.a = 0.4f;
+            }
             marker_array.markers.push_back(vp);
+
+            if (behind_robot) continue;
 
             // Arrow pointing from camera toward object (RViz arrows point along X-axis)
             Eigen::Vector3d toward = (object_center - cam).normalized();
