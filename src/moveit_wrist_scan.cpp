@@ -605,11 +605,11 @@ int main(int argc, char * argv[])
 
     std::vector<double> left_initial_joints(7);
     left_initial_joints[0] = 0    * D2R;
-    left_initial_joints[1] = -90  * D2R;
+    left_initial_joints[1] = 90   * D2R;
     left_initial_joints[2] = 0    * D2R;
-    left_initial_joints[3] = -110 * D2R;
+    left_initial_joints[3] = -100 * D2R;
     left_initial_joints[4] = 0    * D2R;
-    left_initial_joints[5] = -35  * D2R;
+    left_initial_joints[5] = -10  * D2R;
     left_initial_joints[6] = 0    * D2R;
 
     RCLCPP_INFO(logger, "Moving left arm to initial manipulation pose...");
