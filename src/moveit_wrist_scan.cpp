@@ -1036,17 +1036,18 @@ int main(int argc, char * argv[])
 
     RCLCPP_INFO(logger, "Wrist scan complete. Visited %zu viewpoints.", path.size());
 
-    // -------------------------------------------------------------------------
-    // Step F: Return LEFT ARM to zero joints
-    // -------------------------------------------------------------------------
-    RCLCPP_INFO(logger, "Returning left arm to zero...");
-    publish_state(1);  // state 1: left arm moving
     std::vector<double> zero_joints(7, 0.0);
-    left_arm.setJointValueTarget(zero_joints);
+
+    // -------------------------------------------------------------------------
+    // Step F: Return LEFT ARM to initial pose
+    // -------------------------------------------------------------------------
+    RCLCPP_INFO(logger, "Returning left arm to initial pose...");
+    publish_state(1);  // state 1: left arm moving
+    left_arm.setJointValueTarget(left_initial_joints);
     if (left_arm.plan(left_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
         left_arm.execute(left_plan);
     } else {
-        RCLCPP_WARN(logger, "Left arm reset plan failed.");
+        RCLCPP_WARN(logger, "Left arm return to initial pose failed.");
     }
 
     // -------------------------------------------------------------------------
@@ -1059,6 +1060,18 @@ int main(int argc, char * argv[])
         right_arm.execute(right_plan);
     } else {
         RCLCPP_WARN(logger, "Right arm reset plan failed.");
+    }
+
+    // -------------------------------------------------------------------------
+    // Step H: Return LEFT ARM to zero joints
+    // -------------------------------------------------------------------------
+    RCLCPP_INFO(logger, "Returning left arm to zero...");
+    publish_state(1);  // state 1: left arm moving
+    left_arm.setJointValueTarget(zero_joints);
+    if (left_arm.plan(left_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+        left_arm.execute(left_plan);
+    } else {
+        RCLCPP_WARN(logger, "Left arm reset to zero failed.");
     }
 
     // -------------------------------------------------------------------------
