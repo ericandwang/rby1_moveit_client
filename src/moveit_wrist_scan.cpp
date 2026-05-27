@@ -557,10 +557,22 @@ int main(int argc, char * argv[])
     //   1 = LEFT_ARM_MOVING — left arm executing a move to the next viewpoint
     //   2 = RIGHT_ARM_MOVING — right arm executing a move
     auto state_pub = node->create_publisher<std_msgs::msg::Int32>("/wrist_scan/state", 10);
-    auto publish_state = [&](int s) {
+    std::atomic<int> current_scan_state{0};
+
+    // Publish state continuously at 10 Hz so subscribers always see the latest value.
+    std::thread state_thread([&]() {
+        rclcpp::Rate rate(10);
         std_msgs::msg::Int32 msg;
-        msg.data = s;
-        state_pub->publish(msg);
+        while (rclcpp::ok()) {
+            msg.data = current_scan_state.load();
+            state_pub->publish(msg);
+            rate.sleep();
+        }
+    });
+    state_thread.detach();
+
+    auto publish_state = [&](int s) {
+        current_scan_state.store(s);
     };
 
     // ========================================================================
