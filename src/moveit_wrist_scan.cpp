@@ -620,7 +620,7 @@ int main(int argc, char * argv[])
     //Eigen::Vector3d object_center(0.338, -0.191, 1.362);  // joints: 0,-90,0,-135,0,-15,0
     //Eigen::Vector3d object_center(0.415, -0.1500, 1.310);
     Eigen::Vector3d object_center(0.453, 0.060, 1.367);    // joints: -71,-60,62,-113,56,3,-56, +7cm along -Z of ee_right
-    double scan_radius = 0.45;                             // camera orbit radius [m]
+    double scan_radius = 0.25;                             // camera orbit radius [m]
     double min_camera_x = 0.0;                             // min +X in base for camera viewpoints only
     int NUM_SPHERE_POINTS = 32;
     int NUM_IK_SEEDS = 12;
@@ -642,8 +642,8 @@ int main(int argc, char * argv[])
     right_hold_joints[0] = -71  * D2R;  // pose B: -71,-60,62,-113,-90,3,-56
     right_hold_joints[1] = -60  * D2R;
     right_hold_joints[2] = 62   * D2R;
-    right_hold_joints[3] = -113 * D2R;
-    right_hold_joints[4] = -90  * D2R;
+    right_hold_joints[3] = -90 * D2R; //was -113
+    right_hold_joints[4] = 0  * D2R;
     right_hold_joints[5] = 3    * D2R;
     right_hold_joints[6] = -56  * D2R;
 
