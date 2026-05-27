@@ -1,6 +1,5 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
-#include <std_msgs/msg/empty.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <cv_bridge/cv_bridge.h>
@@ -10,19 +9,21 @@
 #include <chrono>
 #include <ctime>
 
+// Captures color + depth + TF at 2 FPS continuously.
+// No trigger needed — just run alongside moveit_wrist_scan.
 class WristScanCapture : public rclcpp::Node
 {
 public:
     WristScanCapture() : Node("wrist_scan_capture")
     {
-        // Create timestamped session directory
+        // Timestamped session directory: ~/scan_data/scan_YYYYMMDD_HHMMSS/
         auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         char buf[32];
         std::strftime(buf, sizeof(buf), "%Y%m%d_%H%M%S", std::localtime(&t));
         session_dir_ = std::string(getenv("HOME")) + "/scan_data/scan_" + buf;
         std::filesystem::create_directories(session_dir_);
 
-        tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
+        tf_buffer_   = std::make_shared<tf2_ros::Buffer>(get_clock());
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
         color_sub_ = create_subscription<sensor_msgs::msg::Image>(
@@ -33,9 +34,10 @@ public:
             "/camera/camera/depth/image_rect_raw", 10,
             [this](sensor_msgs::msg::Image::SharedPtr msg) { latest_depth_ = msg; });
 
-        trigger_sub_ = create_subscription<std_msgs::msg::Empty>(
-            "/wrist_scan/capture", 10,
-            [this](std_msgs::msg::Empty::SharedPtr) { capture(); });
+        // 2 FPS timer (500 ms)
+        timer_ = create_wall_timer(
+            std::chrono::milliseconds(500),
+            [this]() { capture(); });
 
         RCLCPP_INFO(get_logger(), "WristScanCapture ready. Saving to: %s", session_dir_.c_str());
     }
@@ -44,12 +46,12 @@ private:
     void capture()
     {
         if (!latest_color_ || !latest_depth_) {
-            RCLCPP_WARN(get_logger(), "No images yet, skipping capture %d", frame_count_);
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "No images yet, waiting...");
             return;
         }
 
         char prefix[16];
-        std::snprintf(prefix, sizeof(prefix), "%03d", frame_count_);
+        std::snprintf(prefix, sizeof(prefix), "%04d", frame_count_);
         std::string base = session_dir_ + "/" + prefix;
 
         // Save color
@@ -73,9 +75,9 @@ private:
         // Save transforms
         std::ofstream f(base + "_transforms.json");
         f << "{\n";
-        const std::vector<std::pair<std::string,std::string>> frames = {
+        const std::vector<std::pair<std::string, std::string>> frames = {
             {"link_left_arm_6", "camera_link"},
-            {"ee_right",        "object_link"}
+            {"ee_right",        "object_link"},
         };
         for (size_t i = 0; i < frames.size(); ++i) {
             const auto& [frame, label] = frames[i];
@@ -94,7 +96,7 @@ private:
         }
         f << "}\n";
 
-        RCLCPP_INFO(get_logger(), "Captured frame %03d", frame_count_);
+        RCLCPP_INFO(get_logger(), "Captured frame %04d", frame_count_);
         frame_count_++;
     }
 
@@ -102,7 +104,7 @@ private:
     int frame_count_ = 0;
     sensor_msgs::msg::Image::SharedPtr latest_color_, latest_depth_;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr color_sub_, depth_sub_;
-    rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr trigger_sub_;
+    rclcpp::TimerBase::SharedPtr timer_;
     std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 };

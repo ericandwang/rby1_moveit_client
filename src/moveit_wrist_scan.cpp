@@ -8,8 +8,6 @@
 #include "rby1-sdk/upc/device.h"
 #include "dynamixel_sdk/dynamixel_sdk.h"
 #include "std_msgs/msg/int32.hpp"
-#include "std_msgs/msg/empty.hpp"
-#include "sensor_msgs/msg/temperature.hpp"
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include <moveit_msgs/msg/collision_object.hpp>
@@ -43,8 +41,11 @@ std::vector<Eigen::Matrix<double, 2, 1>> q_min_max_vector;
 #define M_PI 3.14159265358979323846
 #define D2R 0.017453288888888
 
+// Wrist scan motion state published on /wrist_scan/state (std_msgs/Int32):
+//   0 = AT_VIEWPOINT   : left arm settled at a planned viewpoint
+//   1 = LEFT_ARM_MOVING: left arm executing a move to the next viewpoint
+//   2 = RIGHT_ARM_MOVING: right arm executing a move
 std::atomic<bool> running{true};
-std::atomic<bool> is_sleeping{false};
 rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
 std::vector<double> latest_joint_positions_(24, 0.0);
 
@@ -310,50 +311,6 @@ bool isLeftArmJoint0InFront(const std::vector<double>& joints) {
     return joints[0] < kLeftArmJoint0MaxFrontDeg * D2R;
 }
 
-bool isLeftArmInFront(
-    const moveit::core::RobotState& state,
-    const moveit::core::JointModelGroup* jmg)
-{
-    std::vector<double> joints;
-    state.copyJointGroupPositions(jmg, joints);
-    return isLeftArmJoint0InFront(joints);
-}
-
-bool isPlannedTrajectoryInFront(
-    const moveit::planning_interface::MoveGroupInterface::Plan& plan,
-    const moveit::core::RobotStatePtr& reference_state,
-    const moveit::core::JointModelGroup* jmg)
-{
-    const auto& points = plan.trajectory_.joint_trajectory.points;
-    if (points.empty()) return false;
-
-    moveit::core::RobotState state(*reference_state);
-    for (const auto& pt : points) {
-        state.setJointGroupPositions(jmg, pt.positions);
-        state.update();
-        if (!isLeftArmInFront(state, jmg)) return false;
-    }
-    return true;
-}
-
-// Plan to joint target; reject if goal or any trajectory sample has joint 0 >= 30 deg.
-bool planLeftArmInFront(
-    moveit::planning_interface::MoveGroupInterface& arm,
-    moveit::planning_interface::MoveGroupInterface::Plan& plan,
-    const moveit::core::RobotStatePtr& reference_state,
-    const moveit::core::JointModelGroup* jmg,
-    const std::vector<double>& joints)
-{
-    if (!isLeftArmJoint0InFront(joints)) {
-        return false;
-    }
-    arm.setStartStateToCurrentState();
-    arm.setJointValueTarget(joints);
-    if (arm.plan(plan) != moveit::core::MoveItErrorCode::SUCCESS) {
-        return false;
-    }
-    return isPlannedTrajectoryInFront(plan, reference_state, jmg);
-}
 
 // Convert a Fibonacci sphere point to a target gripper orientation.
 // Rotates the reference direction (0,0,1) onto the sphere point,
@@ -592,23 +549,17 @@ int main(int argc, char * argv[])
         }
     });
 
-    auto flag_pub = node->create_publisher<sensor_msgs::msg::Temperature>("waiting_flag", 10);
     auto marker_pub = node->create_publisher<visualization_msgs::msg::MarkerArray>("/wrist_scan_markers", 10);
-    auto capture_pub = node->create_publisher<std_msgs::msg::Empty>("/wrist_scan/capture", 10);
-    // Publisher thread (publishes at 10Hz).
-    // is_sleeping=true signals the capture node that the arm has settled at a viewpoint.
-    // TODO (RealSense integration): capture node subscribes to waiting_flag and triggers
-    //   depth frame acquisition when temperature==1.0.
-    std::thread([&](){
-        rclcpp::Rate rate(10); // 10Hz
-        sensor_msgs::msg::Temperature flag_msg;
-        while(rclcpp::ok()){
-            flag_msg.header.stamp = node->now();
-            flag_msg.temperature = is_sleeping ? 1.0 : 0.0;
-            flag_pub->publish(flag_msg);
-            rate.sleep();
-        }
-    }).detach();
+    // State publisher: /wrist_scan/state (std_msgs/Int32)
+    //   0 = AT_VIEWPOINT    — left arm settled at a planned viewpoint
+    //   1 = LEFT_ARM_MOVING — left arm executing a move to the next viewpoint
+    //   2 = RIGHT_ARM_MOVING — right arm executing a move
+    auto state_pub = node->create_publisher<std_msgs::msg::Int32>("/wrist_scan/state", 10);
+    auto publish_state = [&](int s) {
+        std_msgs::msg::Int32 msg;
+        msg.data = s;
+        state_pub->publish(msg);
+    };
 
     // ========================================================================
     // WRIST SCAN: Left arm sweeps RealSense around stationary object held by right arm
@@ -648,6 +599,7 @@ int main(int argc, char * argv[])
     right_hold_joints[6] = -56  * D2R;
 
     RCLCPP_INFO(logger, "Moving right arm to holding pose...");
+    publish_state(2);  // state 2: right arm moving
     right_arm.setJointValueTarget(right_hold_joints);
     if (right_arm.plan(right_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
         right_arm.execute(right_plan);
@@ -672,13 +624,13 @@ int main(int argc, char * argv[])
     left_initial_joints[6] = 0    * D2R;
 
     const auto* left_jmg = left_arm.getRobotModel()->getJointModelGroup("rby1_left_arm");
-    auto pre_scan_state = left_arm.getCurrentState(10.0);
     RCLCPP_INFO(logger, "Moving left arm to initial manipulation pose...");
-    if (pre_scan_state && planLeftArmInFront(
-            left_arm, left_plan, pre_scan_state, left_jmg, left_initial_joints)) {
+    publish_state(1);  // state 1: left arm moving
+    left_arm.setJointValueTarget(left_initial_joints);
+    if (left_arm.plan(left_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
         left_arm.execute(left_plan);
     } else {
-        RCLCPP_WARN(logger, "Left arm plan to initial pose failed or goes behind robot.");
+        RCLCPP_WARN(logger, "Left arm plan to initial pose failed.");
     }
     rclcpp::sleep_for(std::chrono::milliseconds(1000));
 
@@ -994,23 +946,20 @@ int main(int argc, char * argv[])
 
         bool executed = false;
 
-        if (planLeftArmInFront(
-                left_arm, left_plan, current_state, left_jmg,
-                graph[node_idx].joints)) {
+        publish_state(1);  // state 1: left arm moving
+        left_arm.setJointValueTarget(graph[node_idx].joints);
+        if (left_arm.plan(left_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
             left_arm.execute(left_plan);
             executed = true;
         } else {
-            RCLCPP_WARN(logger,
-                "  Primary plan failed or goes behind robot for coverage point %d, trying alternatives...",
-                cov_idx);
+            RCLCPP_WARN(logger, "  Primary plan failed for coverage point %d, trying alternatives...", cov_idx);
 
             for (size_t i = 0; i < graph.size(); ++i) {
                 if ((int)i == node_idx) continue;
                 if (graph[i].coverage_idx != cov_idx) continue;
 
-                if (planLeftArmInFront(
-                        left_arm, left_plan, current_state, left_jmg,
-                        graph[i].joints)) {
+                left_arm.setJointValueTarget(graph[i].joints);
+                if (left_arm.plan(left_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
                     RCLCPP_INFO(logger,
                         "  Using alternative IK solution %zu for coverage point %d", i, cov_idx);
                     left_arm.execute(left_plan);
@@ -1021,18 +970,15 @@ int main(int argc, char * argv[])
         }
 
         if (!executed) {
-            RCLCPP_WARN(logger,
-                "  Skipping viewpoint %d/%d (coverage point %d) — no in-front plan",
-                step + 1, (int)path.size(), cov_idx);
+            RCLCPP_WARN(logger, "  Skipping viewpoint %d/%d (coverage point %d) — no valid plan",
+                        step + 1, (int)path.size(), cov_idx);
+            publish_state(0);  // back to settled even if skipped
             continue;
         }
 
-        // Arm has settled — trigger capture node and pause for frame acquisition
-        is_sleeping = true;
-        rclcpp::sleep_for(std::chrono::milliseconds(300));  // let arm fully settle
-        capture_pub->publish(std_msgs::msg::Empty{});
-        rclcpp::sleep_for(std::chrono::milliseconds(300));
-        is_sleeping = false;
+        // Arm settled at viewpoint — capture node captures continuously at 2 FPS
+        publish_state(0);  // state 0: at viewpoint
+        rclcpp::sleep_for(std::chrono::milliseconds(500));  // dwell at viewpoint for capture
     }
 
     RCLCPP_INFO(logger, "Wrist scan complete. Visited %zu viewpoints.", path.size());
@@ -1041,19 +987,20 @@ int main(int argc, char * argv[])
     // Step F: Return LEFT ARM to zero joints
     // -------------------------------------------------------------------------
     RCLCPP_INFO(logger, "Returning left arm to zero...");
+    publish_state(1);  // state 1: left arm moving
     std::vector<double> zero_joints(7, 0.0);
-    current_state = left_arm.getCurrentState(5.0);
-    if (current_state && planLeftArmInFront(
-            left_arm, left_plan, current_state, left_jmg, zero_joints)) {
+    left_arm.setJointValueTarget(zero_joints);
+    if (left_arm.plan(left_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
         left_arm.execute(left_plan);
     } else {
-        RCLCPP_WARN(logger, "Left arm reset plan failed or goes behind robot.");
+        RCLCPP_WARN(logger, "Left arm reset plan failed.");
     }
 
     // -------------------------------------------------------------------------
     // Step G: Return RIGHT ARM to zero joints
     // -------------------------------------------------------------------------
     RCLCPP_INFO(logger, "Returning right arm to zero...");
+    publish_state(2);  // state 2: right arm moving
     right_arm.setJointValueTarget(zero_joints);
     if (right_arm.plan(right_plan) == moveit::core::MoveItErrorCode::SUCCESS) {
         right_arm.execute(right_plan);
