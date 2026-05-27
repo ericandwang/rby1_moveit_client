@@ -384,12 +384,14 @@ std::vector<IKConfig> sampleIKConfigs(
             }
         }
 
-        // Attempt IK from this seed (100ms timeout); reject configs behind the robot
-        if (seed_state.setFromIK(jmg, target_pose, 0.1) && isLeftArmInFront(seed_state, jmg)) {
+        // Attempt IK from this seed (100ms timeout); keep only if joint 0 < 30 deg
+        if (seed_state.setFromIK(jmg, target_pose, 0.1)) {
             IKConfig config;
             seed_state.copyJointGroupPositions(jmg, config.joint_values);
-            config.coverage_point_idx = coverage_idx;
-            configs.push_back(config);
+            if (isLeftArmJoint0InFront(config.joint_values)) {
+                config.coverage_point_idx = coverage_idx;
+                configs.push_back(config);
+            }
         }
     }
 
