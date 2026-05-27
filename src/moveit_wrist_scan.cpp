@@ -9,6 +9,9 @@
 #include "dynamixel_sdk/dynamixel_sdk.h"
 #include "std_msgs/msg/int32.hpp"
 #include <visualization_msgs/msg/marker_array.hpp>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_eigen/tf2_eigen.hpp>
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include <moveit_msgs/msg/collision_object.hpp>
 #include <shape_msgs/msg/solid_primitive.hpp>
@@ -475,6 +478,10 @@ int main(int argc, char * argv[])
 
     auto const logger = rclcpp::get_logger("moveit_wrist_scan");
 
+    // TF buffer for automatic object_center lookup from ee_right
+    auto tf_buffer   = std::make_shared<tf2_ros::Buffer>(node->get_clock());
+    auto tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
+
     // script start
     auto robot = rb::Robot<y1_model::A>::Create("192.168.30.1:50051");
     robot->Connect();
@@ -581,12 +588,10 @@ int main(int argc, char * argv[])
 
     using moveit::planning_interface::MoveGroupInterface;
 
-    // Hardcoded constants
-    //Eigen::Vector3d object_center(0.338, -0.191, 1.362);  // joints: 0,-90,0,-135,0,-15,0
-    //Eigen::Vector3d object_center(0.415, -0.1500, 1.310);
-    Eigen::Vector3d object_center(0.453, 0.060, 1.367);    // joints: -71,-60,62,-113,56,3,-56, +7cm along -Z of ee_right
-    double scan_radius = 0.25;                             // camera orbit radius [m]
-    double min_camera_x = 0.0;                             // min +X in base for camera viewpoints only
+    // Scan constants
+    double scan_radius  = 0.25;  // camera orbit radius [m]
+    double min_camera_x = 0.0;   // min +X in base for camera viewpoints only
+    double object_z_offset = -0.08; // offset along ee_right local -Z to object center [m]
     int NUM_SPHERE_POINTS = 32;
     int NUM_IK_SEEDS = 12;
 
@@ -621,6 +626,40 @@ int main(int argc, char * argv[])
         RCLCPP_WARN(logger, "Right arm plan to holding pose failed.");
     }
     rclcpp::sleep_for(std::chrono::milliseconds(1000));
+
+    // -------------------------------------------------------------------------
+    // Step A1: Look up ee_right pose from TF to compute object_center automatically.
+    //          object_center = ee_right position + R_ee * (0, 0, object_z_offset)
+    // -------------------------------------------------------------------------
+    Eigen::Vector3d object_center;
+    {
+        geometry_msgs::msg::TransformStamped tf_stamped;
+        bool got_tf = false;
+        for (int attempt = 0; attempt < 20 && !got_tf; ++attempt) {
+            try {
+                tf_stamped = tf_buffer->lookupTransform(
+                    "base", "ee_right", tf2::TimePointZero,
+                    tf2::durationFromSec(0.5));
+                got_tf = true;
+            } catch (const tf2::TransformException& ex) {
+                RCLCPP_WARN(logger, "TF lookup attempt %d failed: %s", attempt + 1, ex.what());
+                rclcpp::sleep_for(std::chrono::milliseconds(200));
+            }
+        }
+
+        if (!got_tf) {
+            RCLCPP_ERROR(logger, "Could not get ee_right TF after 20 attempts. Aborting.");
+            running = false;
+            spin_thread.join();
+            rclcpp::shutdown();
+            return 1;
+        }
+
+        Eigen::Isometry3d ee_pose = tf2::transformToEigen(tf_stamped);
+        object_center = ee_pose * Eigen::Vector3d(0.0, 0.0, object_z_offset);
+        RCLCPP_INFO(logger, "object_center from TF: (%.3f, %.3f, %.3f)",
+                    object_center.x(), object_center.y(), object_center.z());
+    }
 
     // -------------------------------------------------------------------------
     // Step A2: Move LEFT ARM to initial manipulation pose (better IK / collision context)
@@ -675,7 +714,7 @@ int main(int argc, char * argv[])
     double camera_box_x = 0.0;   // wrist camera offset from link_left_arm_6
     double camera_box_y = 0.05;  // 5cm to the left
     double camera_box_z = -0.10; // 5cm original - 15cm = -10cm
-    double sphere_z     = -0.08; // 8cm forward from ee_right
+    double sphere_z     = object_z_offset; // same offset used for object_center TF lookup
 
     // Object 1: Wrist camera box on left EE (75x75x40mm)
     {
